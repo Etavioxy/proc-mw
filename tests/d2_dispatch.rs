@@ -1,6 +1,9 @@
 //! D2 类型通道 · 测试场景：生产形状分发（短路/错误/三槽位）
 
-use proc_mw::dispatch::{chain_exec, Builtin, Ctx, Flow, Mw, MwError, Node};
+use std::any::Any;
+use std::sync::Arc;
+
+use proc_mw::dispatch::{chain_exec, Builtin, Ctx, ExternNode, Flow, Mw, MwError, Node};
 
 fn core_add1(ctx: &mut Ctx) -> Result<i32, MwError> {
     Ok(ctx.input + 1)
@@ -65,15 +68,59 @@ fn dyn_slot_works() {
     assert_eq!(chain_exec(&nodes, core_add1, 1).unwrap(), 103);
 }
 
+/// 槽位 D：运行期加载、无状态 → thin Extern（本地 extern C fn + 虚拟保活句柄，
+/// 真实 dlopen 见 examples/d6_runtime_load.rs）
+unsafe extern "C" fn ext_enter(input: *mut i32, _output: *mut i32) -> i32 {
+    unsafe { *input *= 10 };
+    0
+}
+unsafe extern "C" fn ext_exit(output: *mut i32) {
+    unsafe { *output += 100 };
+}
+
+#[test]
+fn extern_slot_thin_dispatch() {
+    let node = Node::Extern(ExternNode {
+        enter: ext_enter,
+        exit: Some(ext_exit),
+        keepalive: Arc::new(()) as Arc<dyn Any + Send + Sync>,
+    });
+    // enter: 5 → ×10=50 → core 51 → exit +100=151
+    assert_eq!(chain_exec(&[node], core_add1, 5).unwrap(), 151);
+}
+
+#[test]
+fn extern_slot_break_code() {
+    // 插件返回 1=Break → Halted，核心不执行
+    unsafe extern "C" fn brk(_i: *mut i32, _o: *mut i32) -> i32 {
+        1
+    }
+    let node = Node::Extern(ExternNode {
+        enter: brk,
+        exit: None,
+        keepalive: Arc::new(()) as Arc<dyn Any + Send + Sync>,
+    });
+    assert_eq!(chain_exec(&[node], core_add1, 5), Err(MwError::Halted));
+}
+
 #[test]
 fn slot_sizes() {
-    // 每个中间件只付实际需要的成本
+    // 每个中间件只付实际需要的成本——四种槽位全部量化
     assert_eq!(
         std::mem::size_of::<fn(&mut Ctx) -> Result<Flow, MwError>>(),
         8,
-        "fn 指针 thin 8B"
+        "FnPtr：Rust fn thin 8B"
     );
-    assert_eq!(std::mem::size_of::<Box<dyn Mw>>(), 16, "dyn fat 16B");
-    assert_eq!(std::mem::size_of::<Builtin>(), 8, "Builtin 有状态内联 8B");
-    assert_eq!(std::mem::size_of::<Node>(), 24, "Node 承载最大变体 Dyn(16B)+tag");
+    assert_eq!(std::mem::size_of::<Box<dyn Mw>>(), 16, "Dyn：fat 16B");
+    assert_eq!(std::mem::size_of::<Builtin>(), 8, "Builtin：有状态内联 8B");
+    assert_eq!(
+        std::mem::size_of::<ExternNode>(),
+        32,
+        "Extern：2×thin fn(16B) + fat Arc<dyn Any> 保活(16B)；分派本身无 vtable"
+    );
+    assert_eq!(
+        std::mem::size_of::<Node>(),
+        40,
+        "Node 承载最大变体 Extern(32B)+tag"
+    );
 }

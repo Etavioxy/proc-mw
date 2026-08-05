@@ -21,3 +21,9 @@ name = "d4_bench"
 path = "examples/d4_bench.rs"
 
 [dev-dependencies]
+
+[dependencies]
+libloading = { version = "0.9", optional = true }
+
+[features]
+runtime = ["dep:libloading"]

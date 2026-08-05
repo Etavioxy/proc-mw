@@ -17,6 +17,9 @@
 pub mod chain;
 pub mod dispatch;
 
+#[cfg(feature = "runtime")]
+pub mod runtime;
+
 // ===== D1：协议 + 零污染核心 + 遮蔽装配 =====
 
 /// 模块间契约

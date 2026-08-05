@@ -6,7 +6,9 @@
 //!
 //! 洋葱模型：enter 正序（可短路/可报错）→ 核心 → exit 逆序。
 
+use std::any::Any;
 use std::fmt;
+use std::sync::Arc;
 
 /// 链上传递的上下文（生产形状：不是裸 i32）
 #[derive(Clone, Debug)]
@@ -64,10 +66,32 @@ pub enum Builtin {
     RejectNegative, // 短路/拒绝示例
 }
 
-/// 异构节点：三种槽位共存（D2）
+/// 运行期加载、无状态的插件槽位（D6）：thin extern C 函数指针 + 保活句柄。
+/// 不用 dyn——无状态插件按 D2 落 thin 槽，只有有状态开放插件才进 `Dyn`。
+/// `keepalive` 持有 dlopen 的 Library（永不 unload，evcxr 教训）。
+pub struct ExternNode {
+    /// enter(input, output) -> 0=Continue/1=Break/2=Rejected
+    pub enter: unsafe extern "C" fn(*mut i32, *mut i32) -> i32,
+    pub exit: Option<unsafe extern "C" fn(*mut i32)>,
+    /// 不透明保活句柄：防止插件 .so 被卸载（Arc<Library> 经类型擦除）
+    pub keepalive: Arc<dyn Any + Send + Sync>,
+}
+
+impl Clone for ExternNode {
+    fn clone(&self) -> Self {
+        ExternNode {
+            enter: self.enter,
+            exit: self.exit,
+            keepalive: Arc::clone(&self.keepalive),
+        }
+    }
+}
+
+/// 异构节点：四种槽位共存（D2/D6）
 pub enum Node {
     Builtin(Builtin),                              // 槽位 A：封闭·有状态 → 内联
-    FnPtr(fn(&mut Ctx) -> Result<Flow, MwError>), // 槽位 B：无状态 → thin 指针
+    FnPtr(fn(&mut Ctx) -> Result<Flow, MwError>), // 槽位 B：无状态 Rust fn → thin 指针
+    Extern(ExternNode),                           // 槽位 D：运行期加载无状态 → thin extern C fn
     Dyn(Box<dyn Mw>),                             // 槽位 C：开放·有状态 → fat 指针
 }
 
@@ -76,6 +100,7 @@ impl Clone for Node {
         match self {
             Node::Builtin(b) => Node::Builtin(*b),
             Node::FnPtr(f) => Node::FnPtr(*f),
+            Node::Extern(e) => Node::Extern(e.clone()),
             Node::Dyn(d) => Node::Dyn(d.box_clone()),
         }
     }
@@ -105,6 +130,14 @@ impl Node {
                 }
             },
             Node::FnPtr(f) => f(ctx),
+            Node::Extern(e) => {
+                let code = unsafe { (e.enter)(&mut ctx.input, &mut ctx.output) };
+                match code {
+                    0 => Ok(Flow::Continue),
+                    1 => Ok(Flow::Break),
+                    _ => Err(MwError::Rejected("plugin")),
+                }
+            }
             Node::Dyn(d) => d.enter(ctx),
         }
     }
@@ -124,6 +157,11 @@ impl Node {
                 Builtin::RejectNegative => {}
             },
             Node::FnPtr(_) => {} // 无状态 fn-ptr 只参与进入阶段（简化契约）
+            Node::Extern(e) => {
+                if let Some(f) = e.exit {
+                    unsafe { f(&mut ctx.output) };
+                }
+            }
             Node::Dyn(d) => d.exit(ctx),
         }
     }

@@ -1,0 +1,8 @@
+[package]
+name = "d6_plugin"
+version = "0.1.0"
+edition = "2021"
+description = "D6 插件示例：cdylib，运行期被 proc-mw 宿主 dlopen"
+
+[lib]
+crate-type = ["cdylib"]
