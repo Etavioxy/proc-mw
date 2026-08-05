@@ -17,6 +17,7 @@
 pub mod async_mw;
 pub mod chain;
 pub mod dispatch;
+pub mod generic;
 pub mod precompiled;
 
 #[cfg(feature = "runtime")]
