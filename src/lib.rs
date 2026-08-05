@@ -16,6 +16,7 @@
 
 pub mod chain;
 pub mod dispatch;
+pub mod precompiled;
 
 #[cfg(feature = "runtime")]
 pub mod runtime;
