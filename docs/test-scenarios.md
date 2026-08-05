@@ -8,7 +8,7 @@
 | **D1 表达层** | 行为一致 + Release ZST + Debug 带状态 | `tests/d1_expression.rs` | 双路径结果一致；Release 退化为 ZST（机器码等价见 docs/results/d1） |
 | **D2 类型通道** | 同链三表达一致 + 槽位尺寸 | `tests/d2_dispatch.rs` | 分派正确；fn 指针 thin 8B、Node 承载 max 变体+tag |
 | **D3 动态性** | 增删序列 + 并发读写无撕裂 | `tests/d3_snapshot.rs` | 快照增删语义正确；4 读者+写者并发安全 |
-| **D4 性能** | 空链透明阈值 + 局部加法阈值 | `tests/d4_perf.rs` | 空链与裸调用 <5ns；单节点边际 <20ns |
+| **D4 性能** | 空链透明阈值 + 局部加法阈值 | `tests/d4_perf.rs` | Release 空链与裸调用 <5ns、Debug <30ns（结构性极限见 docs/limits.md L1）；单节点边际 <20ns |
 | **D5 编译层** | 增量失效对比（脚本） | `labs/d5_incremental/measure.sh` | 改数据驱动中间件只重编中间件 crate（Θ(1)）；泛型全重编（Θ(N)） |
 | D6 扩展形态 | 待实现（运行期编译加载 + dlopen） | — | 加载产物按 D2 落槽；不推翻 D1~D5 |
 | D7 安全 | 待实现（extern C ABI + panic 收口） | — | 边界契约、catch_unwind、Send/Sync |
