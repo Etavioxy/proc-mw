@@ -1,0 +1,7 @@
+[package]
+name = "d2_dispatch"
+version = "0.1.0"
+edition = "2021"
+description = "D2 类型通道·零成本分发：异构落槽对比（enum/fn-ptr/dyn）"
+
+[dependencies]
