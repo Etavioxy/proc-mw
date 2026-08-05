@@ -35,6 +35,11 @@ name = "d6_hot_replace"
 path = "examples/d6_hot_replace.rs"
 required-features = ["runtime"]
 
+[[example]]
+name = "d6_multi_plugin"
+path = "examples/d6_multi_plugin.rs"
+required-features = ["runtime"]
+
 [dev-dependencies]
 futures = "0.3"
 
