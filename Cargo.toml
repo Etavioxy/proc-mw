@@ -25,6 +25,11 @@ name = "d6_runtime_load"
 path = "examples/d6_runtime_load.rs"
 required-features = ["runtime"]
 
+[[example]]
+name = "d5_link_cost"
+path = "examples/d5_link_cost.rs"
+required-features = ["runtime"]
+
 [dev-dependencies]
 
 [dependencies]

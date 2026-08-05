@@ -1,0 +1,14 @@
+[package]
+name = "d8_migrate"
+version = "0.1.0"
+edition = "2021"
+description = "D8 迁移工具：识别 handler → 包装进中间件链（syn AST 改写，可回滚）"
+
+[[bin]]
+name = "d8_migrate"
+path = "src/main.rs"
+
+[dependencies]
+proc-mw = { path = "../.." }
+syn = { version = "2", features = ["full", "visit-mut", "extra-traits"] }
+quote = "1"
