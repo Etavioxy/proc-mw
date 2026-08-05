@@ -127,16 +127,10 @@ impl VisitMut for StripDoc {
     }
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let file = args.get(1).unwrap_or_else(|| {
-        eprintln!("usage: d8_migrate <file.rs> [--apply]");
-        std::process::exit(1);
-    });
-    let apply = args.contains(&"--apply".to_string());
-
-    let src = fs::read_to_string(file).expect("读取源文件失败");
-    let mut ast: syn::File = syn::parse_str(&src).expect("解析失败");
+/// 处理单个文件（按域渐进：每文件独立产物 + 回滚快照）
+fn migrate_file(file: &str, apply: bool) -> Result<(), String> {
+    let src = fs::read_to_string(file).map_err(|e| format!("读取 {file}: {e}"))?;
+    let mut ast: syn::File = syn::parse_str(&src).map_err(|e| format!("解析 {file}: {e}"))?;
     // 文件级内属性（`//!` doc 注释 → `#![doc]`）也剥离，否则 include 时非法
     ast.attrs.retain(|a| !a.path().is_ident("doc"));
 
@@ -168,7 +162,7 @@ fn main() {
 
     StripDoc.visit_file_mut(&mut ast);
     let out = quote!(#ast).to_string();
-    println!("// D8 迁移：识别 {} 个候选核心，包装 {} 个", wrapped.len(), count);
+    println!("// D8 迁移 {file}：识别 {} 个候选核心，包装 {} 个", wrapped.len(), count);
     for w in &wrapped {
         println!("//   包装: {w}");
     }
@@ -176,10 +170,28 @@ fn main() {
     if apply {
         let out_path = format!("{file}.mw.rs");
         let bak_path = format!("{file}.bak");
-        fs::write(&out_path, format!("{out}\n")).expect("写产物失败");
-        fs::write(&bak_path, &src).expect("写快照失败");
+        fs::write(&out_path, format!("{out}\n")).map_err(|e| format!("写产物: {e}"))?;
+        fs::write(&bak_path, &src).map_err(|e| format!("写快照: {e}"))?;
         println!("// 已写 {out_path}（回滚快照 {bak_path}，按域渐进可回滚）");
     } else {
         println!("{out}");
+    }
+    Ok(())
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    let apply = args.contains(&"--apply".to_string());
+    // 多文件：每个文件独立产物+回滚（D8 按域渐进采纳）
+    let files: Vec<&String> = args.iter().skip(1).filter(|a| *a != "--apply").collect();
+    if files.is_empty() {
+        eprintln!("usage: d8_migrate <file.rs> [<file2.rs> ...] [--apply]");
+        std::process::exit(1);
+    }
+    for f in &files {
+        if let Err(e) = migrate_file(f, apply) {
+            eprintln!("迁移 {f} 失败: {e}");
+            std::process::exit(1);
+        }
     }
 }

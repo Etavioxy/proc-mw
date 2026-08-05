@@ -32,3 +32,28 @@ fn cross_cutting_extracted() {
     assert!(norm.contains("mw_timing"), "应生成计时中间件 mw_timing");
     assert!(norm.contains("Node::FnPtr(mw_timing)"), "链应填充计时中间件");
 }
+
+#[test]
+fn multi_file_per_domain() {
+    // D8 按域渐进：每个文件独立产物 + 回滚快照
+    for name in ["legacy.rs", "legacy2.rs"] {
+        let base = format!("{}/samples/{}", env!("CARGO_MANIFEST_DIR"), name);
+        assert!(
+            std::fs::read_to_string(format!("{base}.mw.rs")).is_ok(),
+            "{name}.mw.rs 应存在"
+        );
+        assert!(
+            std::fs::read_to_string(format!("{base}.bak")).is_ok(),
+            "{name}.bak 应存在"
+        );
+    }
+    // legacy2（领域 2）的 handler 应被包装
+    let mw2 = std::fs::read_to_string(format!(
+        "{}/samples/legacy2.rs.mw.rs",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    assert!(mw2.contains("chain_exec"), "legacy2 的 handler 应被包装");
+    assert!(mw2.contains("handle_double"), "handle_double 应保留");
+}
+}
