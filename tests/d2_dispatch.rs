@@ -126,7 +126,11 @@ fn slot_sizes() {
         "FnPtr：Rust fn thin 8B"
     );
     assert_eq!(std::mem::size_of::<Box<dyn Mw>>(), 16, "Dyn：fat 16B");
-    assert_eq!(std::mem::size_of::<Builtin>(), 8, "Builtin：有状态内联 8B");
+    assert_eq!(
+        std::mem::size_of::<Builtin>(),
+        16,
+        "Builtin：有状态内联，max 变体含 TraceInit(u64) → 16B"
+    );
     assert_eq!(
         std::mem::size_of::<ExternNode>(),
         32,

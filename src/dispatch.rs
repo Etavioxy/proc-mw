@@ -17,6 +17,8 @@ pub struct Ctx {
     pub output: i32,
     /// 可选截止时间（L5 语义原语：timeout/deadline 的地基）
     pub deadline: Option<std::time::Instant>,
+    /// 链路追踪 ID（横切语义：请求 ID 贯穿整条链，跨中间件传播）
+    pub trace_id: Option<u64>,
 }
 
 impl Ctx {
@@ -25,6 +27,7 @@ impl Ctx {
             input,
             output: 0,
             deadline: None,
+            trace_id: None,
         }
     }
 
@@ -33,6 +36,16 @@ impl Ctx {
             input,
             output: 0,
             deadline: Some(deadline),
+            trace_id: None,
+        }
+    }
+
+    pub fn with_trace(input: i32, trace_id: u64) -> Self {
+        Ctx {
+            input,
+            output: 0,
+            deadline: None,
+            trace_id: Some(trace_id),
         }
     }
 }
@@ -78,6 +91,7 @@ pub enum Builtin {
     Cap(i32),
     RejectNegative, // 短路/拒绝示例
     DeadlineCheck,  // 超时原语：超过 Ctx.deadline → Timeout
+    TraceInit(u64), // 链路追踪：注入 trace_id 贯穿整条链
 }
 
 /// 运行期加载、无状态的插件槽位（D6）：thin extern C 函数指针 + 保活句柄。
@@ -150,6 +164,10 @@ impl Node {
                     }
                     Ok(Flow::Continue)
                 }
+                Builtin::TraceInit(id) => {
+                    ctx.trace_id = Some(*id);
+                    Ok(Flow::Continue)
+                }
             },
             Node::FnPtr(f) => f(ctx),
             Node::Extern(e) => {
@@ -181,6 +199,7 @@ impl Node {
                 }
                 Builtin::RejectNegative => {}
                 Builtin::DeadlineCheck => {}
+                Builtin::TraceInit(_) => {}
             },
             Node::FnPtr(_) => {} // 无状态 fn-ptr 只参与进入阶段（简化契约）
             Node::Extern(e) => {
