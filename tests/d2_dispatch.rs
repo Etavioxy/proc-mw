@@ -90,6 +90,20 @@ fn extern_slot_thin_dispatch() {
 }
 
 #[test]
+fn extern_slot_error_via_return_code() {
+    // D7：错误必须经返回码传播（2=Rejected）；panic 跨 extern C 会 abort（L3）
+    unsafe extern "C" fn reject(_i: *mut i32, _o: *mut i32) -> i32 {
+        2 // Rejected
+    }
+    let node = Node::Extern(ExternNode {
+        enter: reject,
+        exit: None,
+        keepalive: Arc::new(()) as Arc<dyn Any + Send + Sync>,
+    });
+    assert_eq!(chain_exec(&[node], core_add1, 5), Err(MwError::Rejected("plugin")));
+}
+
+#[test]
 fn extern_slot_break_code() {
     // 插件返回 1=Break → Halted，核心不执行
     unsafe extern "C" fn brk(_i: *mut i32, _o: *mut i32) -> i32 {

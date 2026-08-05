@@ -20,6 +20,15 @@
 - **裁定**：**接受**。开放世界的"可克隆"是快照模型的必要成本；box_clone 是标准 trait-object 克隆模式。
 - **影响维度**：D3 × D2（交叉约束）。
 
+## L3 · panic 跨 extern "C" 边界 = 进程 abort，catch_unwind 无效
+
+- **现象**：`extern "C"` 函数内 panic → 运行时判定 "panic in a function that cannot unwind"，**进程直接 abort**。
+- **证据**：`extern_slot_panic_caught` 测试实测（catch_unwind 包裹下仍 abort）。
+- **尝试过的迭代**：在 `Node::Extern::enter` 用 `catch_unwind(AssertUnwindSafe(...))` 包裹 extern C 调用 → **无效**，abort 发生在 catch_unwind 能介入之前。
+- **根因**：extern "C" 标注 no-unwind，panic 无法沿 C ABI 展开；Rust panic 运行时检测到不可展开即 abort。
+- **裁定**：**错误必须经返回码传播**（0/1/2）；插件被要求永不 panic。信任模型：插件可信 in-process；不可信必须子进程沙箱（evcxr 式隔离，可重启）。catch_unwind 不是 FFI 边界的安全网。
+- **影响维度**：D7（安全）。
+
 ---
 
 > 待探索：D6~D8 的实现中大概率还会发现新的极限，持续追加到本表。

@@ -10,8 +10,8 @@
 | **D3 动态性** | 增删序列 + 并发读写无撕裂 | `tests/d3_snapshot.rs` | 快照增删语义正确；4 读者+写者并发安全 |
 | **D4 性能** | 空链透明阈值 + 局部加法阈值 | `tests/d4_perf.rs` | Release 空链与裸调用 <5ns、Debug <30ns（结构性极限见 docs/limits.md L1）；单节点边际 <20ns |
 | **D5 编译层** | 增量失效对比（脚本） | `labs/d5_incremental/measure.sh` | 改数据驱动中间件只重编中间件 crate（Θ(1)）；泛型全重编（Θ(N)） |
-| D6 扩展形态 | 待实现（运行期编译加载 + dlopen） | — | 加载产物按 D2 落槽；不推翻 D1~D5 |
-| D7 安全 | 待实现（extern C ABI + panic 收口） | — | 边界契约、catch_unwind、Send/Sync |
+| **D6 扩展形态** | 运行期加载示例 + Extern 槽位测试 | `examples/d6_runtime_load.rs`（需 runtime feature）、`tests/d2_dispatch.rs`（Extern 槽） | dlopen 插件、ABI 版本校验、无状态插件落 thin Extern 槽（不强制 dyn） |
+| **D7 安全** | panic 不跨界 + ABI 契约测试 | `src/runtime.rs`（catch_unwind 兜底）、测试见 tests | 边界契约、panic 被兜住、Send/Sync |
 | D8 迁移 | 待实现（最后做） | — | 渐进、按域、语义等价 |
 
 ## 运行方式

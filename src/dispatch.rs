@@ -131,8 +131,11 @@ impl Node {
             },
             Node::FnPtr(f) => f(ctx),
             Node::Extern(e) => {
-                let code = unsafe { (e.enter)(&mut ctx.input, &mut ctx.output) };
-                match code {
+                // D7 硬契约：panic 跨 extern "C" 边界是 "cannot unwind"，进程直接 abort，
+                // catch_unwind 无法兜住（实测，见 docs/limits.md L3）。
+                // 因此错误**必须经返回码传播**：0=Continue/1=Break/2=Rejected。
+                // 信任模型：插件是可信代码；不可信插件需子进程沙箱（evcxr 式隔离）。
+                match unsafe { (e.enter)(&mut ctx.input, &mut ctx.output) } {
                     0 => Ok(Flow::Continue),
                     1 => Ok(Flow::Break),
                     _ => Err(MwError::Rejected("plugin")),
