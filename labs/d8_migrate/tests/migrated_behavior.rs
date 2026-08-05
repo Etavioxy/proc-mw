@@ -56,4 +56,3 @@ fn multi_file_per_domain() {
     assert!(mw2.contains("chain_exec"), "legacy2 的 handler 应被包装");
     assert!(mw2.contains("handle_double"), "handle_double 应保留");
 }
-}
