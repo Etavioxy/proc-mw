@@ -146,6 +146,49 @@ pub fn build_plugin_cached(
 
     // 缓存未命中：编译并把产物复制到缓存位置
     let so = build_plugin(name, middleware_source, out_dir)?;
-    fs::copy(&so, &cache_path).map_err(|e| format!("写缓存: {e}"))?;
+    // 原子写缓存：先写临时名再 rename，避免并发读者看到半成品
+    let tmp = cache_path.with_extension("tmp");
+    fs::copy(&so, &tmp).map_err(|e| format!("写缓存: {e}"))?;
+    fs::rename(&tmp, &cache_path).map_err(|e| format!("缓存原子化: {e}"))?;
+
+    // 资源管理：临时 crate 目录已冗余（产物已入缓存），清理防泄漏
+    if let Some(crate_dir) = so
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+    {
+        let _ = fs::remove_dir_all(crate_dir);
+    }
     Ok(cache_path)
+}
+
+/// 资源管理：缓存按字节上限清理（最旧优先淘汰，LRU 思路）
+pub fn cache_cleanup(out_dir: &Path, max_bytes: u64) -> usize {
+    let cache_dir = out_dir.join("proc_mw_compile_cache");
+    if !cache_dir.exists() {
+        return 0;
+    }
+    let mut entries: Vec<(std::path::PathBuf, u64, Option<std::time::SystemTime>)> =
+        fs::read_dir(&cache_dir)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .map(|e| {
+                let p = e.path();
+                let size = e.metadata().map(|m| m.len()).unwrap_or(0);
+                let mtime = e.metadata().and_then(|m| m.modified()).ok();
+                (p, size, mtime)
+            })
+            .collect();
+    entries.sort_by_key(|(_, _, m)| *m); // 最旧在前
+    let mut total: u64 = entries.iter().map(|(_, s, _)| *s).sum();
+    let mut removed = 0usize;
+    while total > max_bytes && entries.len() > 1 {
+        let (p, s, _) = entries.remove(0);
+        if fs::remove_file(&p).is_ok() {
+            total -= s;
+            removed += 1;
+        }
+    }
+    removed
 }
