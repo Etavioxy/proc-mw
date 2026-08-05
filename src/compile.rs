@@ -37,10 +37,9 @@ pub fn build_plugin(name: &str, middleware_source: &str, out_dir: &Path) -> Resu
         .output()
         .map_err(|e| format!("cargo 不可用: {e}"))?;
     if !out.status.success() {
-        return Err(format!(
-            "cargo 编译失败: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        let diags = extract_diagnostics(&stderr);
+        return Err(format!("编译失败：{} 条诊断\n{}", diags.len(), render_diags(&diags, middleware_source)));
     }
 
     let ext = if cfg!(target_os = "macos") {
@@ -51,6 +50,63 @@ pub fn build_plugin(name: &str, middleware_source: &str, out_dir: &Path) -> Resu
         "so"
     };
     Ok(crate_dir.join("target/release").join(format!("lib{crate_name}.{ext}")))
+}
+
+/// 单条编译诊断（错误域：错误代码/消息/源码行号）
+#[derive(Debug, Clone)]
+pub struct Diag {
+    pub code: String,
+    pub message: String,
+    pub line: Option<u32>,
+}
+
+/// 从 cargo stderr 提取结构化诊断（evcxr 从编译错误反推类型的技巧的基础）
+pub fn extract_diagnostics(stderr: &str) -> Vec<Diag> {
+    let mut out: Vec<Diag> = Vec::new();
+    for l in stderr.lines() {
+        let t = l.trim();
+        // 错误头：error[E0308]: mismatched types
+        if let Some(idx) = t.find("error[") {
+            let end = t[idx..].find("]").map(|i| idx + i).unwrap_or(t.len());
+            let code = t[idx + 6..end].to_string();
+            let msg = t[end + 1..].trim_start_matches(": ").to_string();
+            out.push(Diag {
+                code,
+                message: msg,
+                line: None,
+            });
+        } else if let Some(rest) = t.strip_prefix("-->") {
+            // 位置行：--> src/lib.rs:5:9
+            if let Some(d) = out.last_mut() {
+                if d.line.is_none() {
+                    if let Some(colon) = rest.rfind(':') {
+                        let before = &rest[..colon];
+                        if let Some(colon2) = before.rfind(':') {
+                            if let Ok(n) = before[colon2 + 1..].trim().parse::<u32>() {
+                                d.line = Some(n);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 渲染诊断：附中间件源码对应行（定位到用户源码）
+pub fn render_diags(diags: &[Diag], middleware_source: &str) -> String {
+    let lines: Vec<&str> = middleware_source.lines().collect();
+    let mut out = String::new();
+    for d in diags {
+        out.push_str(&format!("  error[{}] {}\n", d.code, d.message));
+        if let Some(n) = d.line {
+            if let Some(src) = lines.get(n.saturating_sub(1) as usize) {
+                out.push_str(&format!("    {:>3} │ {}\n", n, src));
+            }
+        }
+    }
+    out
 }
 
 /// 源码简单哈希（FNV-1a 64 位）——编译缓存的键

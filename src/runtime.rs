@@ -56,7 +56,7 @@ impl Plugin {
             // ABI 版本用函数导出（fn 指针无符号尺寸问题，跨平台稳）
             let ver_fn = *get_sym::<unsafe extern "C" fn() -> i32>(&lib, b"proc_mw_abi_version")
                 .map_err(|_| "缺 ABI 版本函数 proc_mw_abi_version".to_string())?;
-            let ver = unsafe { ver_fn() };
+            let ver = ver_fn();
             if ver != PLUGIN_ABI_VERSION {
                 return Err(format!("ABI 版本不匹配：插件 {} ≠ 宿主 {}", ver, PLUGIN_ABI_VERSION));
             }
@@ -98,6 +98,7 @@ pub struct PluginOpaque {
     _lib: Arc<libloading::Library>,
     abi_version: i32,
     enter: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32,
+    #[allow(dead_code)] // exit 钩子：契约保留，当前示例未调用
     exit: Option<unsafe extern "C" fn(*mut std::ffi::c_void)>,
 }
 
@@ -110,7 +111,7 @@ impl PluginOpaque {
             let lib = libloading::Library::new(path).map_err(|e| format!("dlopen({path}): {e}"))?;
             let ver_fn = *get_sym::<unsafe extern "C" fn() -> i32>(&lib, b"proc_mw_abi_version")
                 .map_err(|_| "缺 ABI 版本函数 proc_mw_abi_version".to_string())?;
-            let ver = unsafe { ver_fn() };
+            let ver = ver_fn();
             if ver != PLUGIN_ABI_VERSION {
                 return Err(format!("ABI 版本不匹配：插件 {} ≠ 宿主 {}", ver, PLUGIN_ABI_VERSION));
             }
