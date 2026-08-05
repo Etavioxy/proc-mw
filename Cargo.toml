@@ -20,6 +20,11 @@ path = "src/lib.rs"
 name = "d4_bench"
 path = "examples/d4_bench.rs"
 
+[[example]]
+name = "d6_runtime_load"
+path = "examples/d6_runtime_load.rs"
+required-features = ["runtime"]
+
 [dev-dependencies]
 
 [dependencies]
