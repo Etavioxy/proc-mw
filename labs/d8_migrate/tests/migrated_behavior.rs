@@ -26,7 +26,9 @@ fn cross_cutting_extracted() {
         "/samples/legacy.rs.mw.rs"
     ))
     .unwrap();
-    assert!(!migrated.contains("Instant"), "计时横切应被剥出核心");
-    assert!(migrated.contains("mw_timing"), "应生成计时中间件 mw_timing");
-    assert!(migrated.contains("Node::FnPtr(mw_timing)"), "链应填充计时中间件");
+    // quote! 渲染带空格（`Node :: FnPtr`），归一化后匹配
+    let norm: String = migrated.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(!norm.contains("Instant"), "计时横切应被剥出核心");
+    assert!(norm.contains("mw_timing"), "应生成计时中间件 mw_timing");
+    assert!(norm.contains("Node::FnPtr(mw_timing)"), "链应填充计时中间件");
 }
