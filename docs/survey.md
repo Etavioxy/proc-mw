@@ -28,7 +28,7 @@
 | **dyn trait 对象** | 开放 | vtable 槽 + 间接调用 | ✅ | `d2_dispatch`；仅 LTO 下可去虚拟化 |
 | **位标记 bitflag** | 开关型 | 1 bit test（bt 指令） | ✅ | `research_slots::bitflag_switches` |
 | **索引注册表**（ID→fn 表） | 半开放 | 查表 + 直调 | ✅ | `research_slots::indexed_registry`；新类型=编译期注册 |
-| **整链预编译**（chain-as-function） | 闭合 | **1 次直调**（LLVM 全内联） | ✅ | `research_slots::chain_as_function`；**生产最可能赢家** |
+| **整链预编译**（chain-as-function） | 闭合 | **1 次直调**（LLVM 全内联） | ✅⚠️ | `d2_precompiled`（-86.4%）；**但改组成件级联重编**（L4），运行时极致≠编译隔离极致 |
 | **泛型单态化**（每核心） | — | 0（内联） | ❌ | 编译 Θ(N)、增量 Θ(N)、二进制 1.5×——`labs/d5_incremental` |
 | **组合子嵌套**（tower 风格） | — | 0（内联） | ❌ | 类型乘积 N×M；与"配置是数据"矛盾 |
 | **闭包组合**（F 组合） | 闭合 | 内联（需泛型/装箱） | ⚠️ | 捕获需装箱否则泛型爆炸 |

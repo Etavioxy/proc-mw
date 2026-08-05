@@ -1,0 +1,10 @@
+[package]
+name = "chains"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+proc-mw = { path = "../../.." }
+
+[lib]
+path = "src/lib.rs"

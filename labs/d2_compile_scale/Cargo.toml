@@ -1,0 +1,6 @@
+[workspace]
+members = ["chains", "app"]
+resolver = "2"
+
+[workspace.profile.release]
+opt-level = 2
