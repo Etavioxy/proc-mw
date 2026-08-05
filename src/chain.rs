@@ -30,6 +30,19 @@ impl Chain {
         chain_exec(&self.nodes, core, input)
     }
 
+    /// 恢复原语（L5）：错误时用 fallback 替代，不向调用方暴露错误
+    pub fn exec_or(
+        &self,
+        core: impl Fn(&mut Ctx) -> Result<i32, MwError>,
+        input: i32,
+        fallback: fn(i32) -> i32,
+    ) -> i32 {
+        match self.exec(core, input) {
+            Ok(v) => v,
+            Err(_) => fallback(input),
+        }
+    }
+
     /// 写路径：复制快照 + 原子替换（RCU），Θ(len)，稀有操作
     pub fn add(&mut self, node: Node) {
         let mut v = (*self.nodes).clone();

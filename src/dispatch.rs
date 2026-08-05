@@ -15,6 +15,8 @@ use std::sync::Arc;
 pub struct Ctx {
     pub input: i32,
     pub output: i32,
+    /// 可选截止时间（L5 语义原语：timeout/deadline 的地基）
+    pub deadline: Option<std::time::Instant>,
 }
 
 impl Ctx {
@@ -22,6 +24,15 @@ impl Ctx {
         Ctx {
             input,
             output: 0,
+            deadline: None,
+        }
+    }
+
+    pub fn with_deadline(input: i32, deadline: std::time::Instant) -> Self {
+        Ctx {
+            input,
+            output: 0,
+            deadline: Some(deadline),
         }
     }
 }
@@ -33,11 +44,12 @@ pub enum Flow {
     Break,
 }
 
-/// 错误：短路终止 或 显式拒绝
+/// 错误：短路终止 / 显式拒绝 / 超时（L5 语义原语）
 #[derive(Debug, PartialEq)]
 pub enum MwError {
     Halted,
     Rejected(&'static str),
+    Timeout,
 }
 
 impl fmt::Display for MwError {
@@ -45,6 +57,7 @@ impl fmt::Display for MwError {
         match self {
             MwError::Halted => write!(f, "chain halted"),
             MwError::Rejected(why) => write!(f, "rejected: {why}"),
+            MwError::Timeout => write!(f, "deadline exceeded"),
         }
     }
 }
@@ -64,6 +77,7 @@ pub enum Builtin {
     Add(i32),
     Cap(i32),
     RejectNegative, // 短路/拒绝示例
+    DeadlineCheck,  // 超时原语：超过 Ctx.deadline → Timeout
 }
 
 /// 运行期加载、无状态的插件槽位（D6）：thin extern C 函数指针 + 保活句柄。
@@ -128,6 +142,14 @@ impl Node {
                         Ok(Flow::Continue)
                     }
                 }
+                Builtin::DeadlineCheck => {
+                    if let Some(dl) = ctx.deadline {
+                        if std::time::Instant::now() >= dl {
+                            return Err(MwError::Timeout);
+                        }
+                    }
+                    Ok(Flow::Continue)
+                }
             },
             Node::FnPtr(f) => f(ctx),
             Node::Extern(e) => {
@@ -158,6 +180,7 @@ impl Node {
                     }
                 }
                 Builtin::RejectNegative => {}
+                Builtin::DeadlineCheck => {}
             },
             Node::FnPtr(_) => {} // 无状态 fn-ptr 只参与进入阶段（简化契约）
             Node::Extern(e) => {
@@ -172,13 +195,12 @@ impl Node {
 
 /// 链执行（洋葱模型）：enter 正序 → 核心 → exit 逆序
 /// 核心由调用方注入——链与核心解耦，链可复用于任意核心
-pub fn chain_exec(
+/// 链执行：接受预构建 Ctx（可携带 deadline 等扩展字段）
+pub fn chain_exec_ctx(
     nodes: &[Node],
     core: impl Fn(&mut Ctx) -> Result<i32, MwError>,
-    input: i32,
+    mut ctx: Ctx,
 ) -> Result<i32, MwError> {
-    let mut ctx = Ctx::new(input);
-
     // 进入：正序，可短路/可报错
     for n in nodes {
         let flow = n.enter(&mut ctx)?;
@@ -196,4 +218,12 @@ pub fn chain_exec(
     }
 
     Ok(ctx.output)
+}
+
+pub fn chain_exec(
+    nodes: &[Node],
+    core: impl Fn(&mut Ctx) -> Result<i32, MwError>,
+    input: i32,
+) -> Result<i32, MwError> {
+    chain_exec_ctx(nodes, core, Ctx::new(input))
 }
