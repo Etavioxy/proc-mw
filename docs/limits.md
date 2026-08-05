@@ -37,6 +37,22 @@
 - **裁定**：**双轨并存**——稳定标准形状用 chain-as-function（运行时 -86.4%），演进/热增删形状用动态 Node 链（编译隔离）。以变更频率为判据（hot/cold 路径分离）。
 - **影响维度**：D2（运行时极致）× D5（编译隔离）——同一机制无法同时达到两者极致。
 
+## L5 · 语义完备性缺口——"极快的窄通道"
+
+- **现象**：系统快是真的快（分派 0.57ns、并发 p99 恒定、编译隔离 Θ(1)），但**能表达的操作集太小**。
+- **根因**：`Ctx` 定死为 `{ input: i32, output: i32 }`——没有 deadline、cancel token、共享状态槽、请求上下文。**原语上限被数据通道锁死**：没有 deadline 字段就没有 timeout 原语。
+- **缺失原语（代数不完备）**：recover（错误回退）、retry、timeout/deadline、rate-limit、circuit-breaker、parallel fan-out、按值分支、cancellation。
+- **对比**：tower 生态（timeout/retry/rate-limit 中间件）建立在更丰富的原语之上；本系统当前只能表达"极快的一串顺序变换+短路+错误"。
+- **裁定**：需补（1）富 Ctx（deadline/cancel/共享状态）为地基，（2）错误恢复 recover/retry，（3）时间原语 timeout/rate-limit，（4）可选并行。本轮先推 Ctx deadline + timeout + recover。
+
+## L6 · async dyn 通道必然每次调用堆分配（24B），"零额外装箱"只适用同步
+
+- **现象**：LLVM IR 抽查 `AsyncAdd::call`——`Box::pin(async move{...})` 生成 `__rust_alloc(24, 8)` 等 8 处 alloc 调用，**每次调用 24B 堆分配**。
+- **根因**：dyn 兼容的 async（boxed-future 契约）必须把 Future 装箱；装箱即堆分配。
+- **对 CORE-CONSTRAINTS 的澄清**："语义在 dyn 下零额外装箱"**只对同步 dyn 成立**（`Box<dyn Mw>` 调用无每调用分配）；**async dyn 必然付 24B/call**。
+- **取舍**：dyn async（付装箱，换动态性/编译隔离）vs 静态 async / RPITIT（不装箱，但失去 dyn 兼容 + 回到单态化）。与 L4 同一模式的权衡。
+- **裁定**：async 通道接受装箱成本（这是"动态+异步"的组合报价）；若要零装箱需静态路径。LLVM 抽查证实了此前未验证的 D2 承诺边界。
+
 ---
 
 > 待探索：D6~D8 的实现中大概率还会发现新的极限，持续追加到本表。
