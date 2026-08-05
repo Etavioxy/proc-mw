@@ -12,10 +12,9 @@
 use std::env;
 use std::fs;
 
-use proc_macro2::TokenStream;
 use quote::quote;
 use syn::visit_mut::VisitMut;
-use syn::{Expr, ItemFn};
+use syn::{Expr, Item, ItemFn};
 
 /// 把 handler 体内对参数 `input` 的引用重命名为 `ctx.input`（进入核心闭包后）
 struct RenameInput;
@@ -50,13 +49,36 @@ fn wrap_handler(f: &mut ItemFn) {
     RenameInput.visit_block_mut(&mut f.block);
     let body = &f.block;
     f.block = Box::new(syn::parse_quote!({
-        proc_mw::chain_exec(
+        proc_mw::dispatch::chain_exec(
             &[], // MVP 空链：包装=恒等；后续把内联横切逻辑抽成中间件填入此处
-            |ctx: &mut proc_mw::dispatch::Ctx| -> Result<i32, proc_mw::dispatch::MwError> #body,
+            |ctx: &mut proc_mw::dispatch::Ctx| -> Result<i32, proc_mw::dispatch::MwError> {
+                Ok(#body) // 原函数体（i32）包进 Ok，满足闭包 Result 契约
+            },
             input,
         )
         .unwrap_or_default()
     }));
+}
+
+/// 剥离 doc 属性：quote! 把 doc 注释渲染成 `#![doc]` 内属性，include 时非法
+struct StripDoc;
+impl VisitMut for StripDoc {
+    fn visit_item_mut(&mut self, item: &mut Item) {
+        let attrs = match item {
+            Item::Fn(f) => &mut f.attrs,
+            Item::Struct(s) => &mut s.attrs,
+            Item::Enum(e) => &mut e.attrs,
+            Item::Const(c) => &mut c.attrs,
+            Item::Static(s) => &mut s.attrs,
+            Item::Trait(t) => &mut t.attrs,
+            Item::Type(t) => &mut t.attrs,
+            Item::Mod(m) => &mut m.attrs,
+            Item::Impl(i) => &mut i.attrs,
+            _ => return,
+        };
+        attrs.retain(|a| !a.path().is_ident("doc"));
+        syn::visit_mut::visit_item_mut(self, item);
+    }
 }
 
 fn main() {
@@ -69,6 +91,8 @@ fn main() {
 
     let src = fs::read_to_string(file).expect("读取源文件失败");
     let mut ast: syn::File = syn::parse_str(&src).expect("解析失败");
+    // 文件级内属性（`//!` doc 注释 → `#![doc]`）也剥离，否则 include 时非法
+    ast.attrs.retain(|a| !a.path().is_ident("doc"));
 
     let mut count = 0usize;
     let mut wrapped: Vec<String> = Vec::new();
@@ -82,6 +106,7 @@ fn main() {
         }
     }
 
+    StripDoc.visit_file_mut(&mut ast);
     let out = quote!(#ast).to_string();
     println!("// D8 迁移：识别 {} 个候选核心，包装 {} 个", wrapped.len(), count);
     for w in &wrapped {
