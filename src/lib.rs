@@ -14,6 +14,7 @@
 //! D8 迁移工具链（最后）   → 后续并入
 //! ```
 
+pub mod async_mw;
 pub mod chain;
 pub mod dispatch;
 pub mod precompiled;
