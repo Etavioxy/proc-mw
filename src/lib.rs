@@ -18,6 +18,7 @@ pub mod async_generic;
 pub mod async_mw;
 pub mod chain;
 pub mod compile;
+pub mod config;
 pub mod dispatch;
 pub mod generic;
 pub mod precompiled;
