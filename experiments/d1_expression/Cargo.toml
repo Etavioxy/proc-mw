@@ -1,0 +1,7 @@
+[package]
+name = "d1_expression"
+version = "0.1.0"
+edition = "2021"
+description = "D1 表达层·零成本抽象：业务零污染 + Release 机器码等价"
+
+[dependencies]

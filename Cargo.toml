@@ -1,0 +1,6 @@
+# 中间件系统实验工作区
+# 每个实验一个 crate，位于 experiments/<name>/
+# 约定：每个实验验证一个维度的"极致"，结论写入 experiments/<name>/RESULT.md
+[workspace]
+members = ["experiments/*"]
+resolver = "2"
