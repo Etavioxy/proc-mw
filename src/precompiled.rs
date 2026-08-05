@@ -6,9 +6,10 @@
 //! 关键边界（D5 实证）：只对**有限几种标准形状**预编译（宏生成的是普通函数，每种形状
 //! 编译一次），绝不对"每核心"泛型化——那会触发 labs/d5_incremental 证明的单态化爆炸。
 //!
-//! 使用：
-//! ```rust
+//! 使用（可运行示例见 `examples/d2_precompiled.rs`）：
+//! ```ignore
 //! use proc_mw::compose_chain;
+//! // 需先定义 Copy 的 Mw 实现（如 AddMw）与核心 fn core
 //! compose_chain!(standard, [AddMw, CapMw], core); // 生成 fn standard(x) -> Result<i32, _>
 //! ```
 
