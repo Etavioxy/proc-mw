@@ -60,6 +60,10 @@ name = "d7_sandbox"
 path = "examples/d7_sandbox.rs"
 required-features = ["runtime"]
 
+[[example]]
+name = "d1_production_asm"
+path = "examples/d1_production_asm.rs"
+
 [dev-dependencies]
 futures = "0.3"
 
