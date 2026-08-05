@@ -1,0 +1,8 @@
+[package]
+name = "d6_plugin_v2"
+version = "0.1.0"
+edition = "2021"
+description = "D6 热替换插件 v2：同一 ABI，不同行为（×100/+1000）"
+
+[lib]
+crate-type = ["cdylib"]

@@ -42,6 +42,18 @@ impl Chain {
         self.nodes = Arc::new(v);
     }
 
+    /// 快照内替换节点（D6 热替换：换插件逻辑不停机）
+    pub fn set(&mut self, idx: usize, node: Node) -> bool {
+        let mut v = (*self.nodes).clone();
+        if idx < v.len() {
+            v[idx] = node;
+            self.nodes = Arc::new(v);
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
