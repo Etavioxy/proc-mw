@@ -16,6 +16,11 @@ resolver = "2"
 name = "proc_mw"
 path = "src/lib.rs"
 
+[[bin]]
+name = "mw_exec"
+path = "src/bin/mw_exec.rs"
+required-features = ["runtime"]
+
 [[example]]
 name = "d4_bench"
 path = "examples/d4_bench.rs"
@@ -48,6 +53,11 @@ required-features = ["runtime"]
 [[example]]
 name = "d6_runtime_compile"
 path = "examples/d6_runtime_compile.rs"
+required-features = ["runtime"]
+
+[[example]]
+name = "d7_sandbox"
+path = "examples/d7_sandbox.rs"
 required-features = ["runtime"]
 
 [dev-dependencies]

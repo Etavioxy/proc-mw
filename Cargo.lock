@@ -13,6 +13,10 @@ name = "d6_plugin"
 version = "0.1.0"
 
 [[package]]
+name = "d6_plugin_bad"
+version = "0.1.0"
+
+[[package]]
 name = "d6_plugin_string"
 version = "0.1.0"
 

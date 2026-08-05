@@ -20,6 +20,7 @@ pub mod compile;
 pub mod dispatch;
 pub mod generic;
 pub mod precompiled;
+pub mod sandbox;
 
 #[cfg(feature = "runtime")]
 pub mod runtime;

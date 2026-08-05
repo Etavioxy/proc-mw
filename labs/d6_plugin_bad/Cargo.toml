@@ -1,0 +1,8 @@
+[package]
+name = "d6_plugin_bad"
+version = "0.1.0"
+edition = "2021"
+description = "D6/D7 坏插件：mw_enter 内 panic（extern C → 进程 abort，L3）"
+
+[lib]
+crate-type = ["cdylib"]
