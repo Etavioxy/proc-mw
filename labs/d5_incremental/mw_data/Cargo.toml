@@ -1,0 +1,8 @@
+[package]
+name = "mw_data"
+version = "0.1.0"
+edition = "2021"
+description = "D5 lab：数据驱动中间件库（跨 crate 增量隔离）"
+
+[lib]
+path = "src/lib.rs"

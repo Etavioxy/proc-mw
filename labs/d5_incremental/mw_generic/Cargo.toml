@@ -1,0 +1,8 @@
+[package]
+name = "mw_generic"
+version = "0.1.0"
+edition = "2021"
+description = "D5 lab：泛型中间件库（反事实变体）"
+
+[lib]
+path = "src/lib.rs"

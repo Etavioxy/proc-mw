@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2021"
 description = "生产 Service 语义 × 运行期热重载的中间件层 — 八维约束在同一项目中持续验证"
 
+# proc-mw 同时是工作区根；labs/ 是测量台（非系统碎片），
+# 用于 D5 编译/动态链接的隔离实验（合成代码生成、独立 dylib 编译单元）。
+# labs/d5_incremental 是自包含子 workspace（多 crate 的增量实验），从根排除。
+[workspace]
+members = ["labs/*"]
+exclude = ["labs/d5_incremental"]
+resolver = "2"
+
 [lib]
 name = "proc_mw"
 path = "src/lib.rs"

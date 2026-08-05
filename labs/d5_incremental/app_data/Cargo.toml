@@ -1,0 +1,10 @@
+[package]
+name = "app_data"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mw_data = { path = "../mw_data" }
+
+[profile.release]
+opt-level = 2

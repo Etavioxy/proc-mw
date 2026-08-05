@@ -1,0 +1,10 @@
+[package]
+name = "app_generic"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mw_generic = { path = "../mw_generic" }
+
+[profile.release]
+opt-level = 2

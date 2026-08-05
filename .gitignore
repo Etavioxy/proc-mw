@@ -1,2 +1,6 @@
 /target
 **/*.rs.bk
+
+# 子 workspace 的构建产物与生成源码（gen.sh 可重新生成）
+labs/d5_incremental/target/
+labs/d5_incremental/**/src/gen/

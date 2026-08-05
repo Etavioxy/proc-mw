@@ -1,0 +1,6 @@
+[workspace]
+members = ["mw_data", "mw_generic", "app_data", "app_generic"]
+resolver = "2"
+
+[workspace.profile.release]
+opt-level = 2
