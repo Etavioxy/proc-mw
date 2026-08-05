@@ -1,0 +1,7 @@
+[package]
+name = "d3_snapshot"
+version = "0.1.0"
+edition = "2021"
+description = "D3 动态性·数据/快照层增删：RCU 快照 + 读路径零成本"
+
+[dependencies]

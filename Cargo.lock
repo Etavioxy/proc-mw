@@ -9,3 +9,7 @@ version = "0.1.0"
 [[package]]
 name = "d2_dispatch"
 version = "0.1.0"
+
+[[package]]
+name = "d3_snapshot"
+version = "0.1.0"
