@@ -69,6 +69,11 @@ name = "d6_compile_generic"
 path = "examples/d6_compile_generic.rs"
 required-features = ["runtime"]
 
+[[example]]
+name = "d7_plugin_memory"
+path = "examples/d7_plugin_memory.rs"
+required-features = ["runtime"]
+
 [dependencies]
 futures = "0.3"
 libloading = { version = "0.9", optional = true }
