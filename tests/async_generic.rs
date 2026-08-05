@@ -78,3 +78,14 @@ fn async_generic_send_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<AsyncChain<HttpReq, HttpResp>>();
 }
+
+#[test]
+fn async_generic_core_panic_caught() {
+    let chain = AsyncChain::new(vec![Arc::new(AsyncAuth { required: "/admin" })]);
+    let req = HttpReq {
+        path: "/api".to_string(),
+        body: vec![],
+    };
+    let r = futures::executor::block_on(chain.exec_catch(|_| panic!("generic bug"), req));
+    assert_eq!(r, Err(MwError::Rejected("core panicked")));
+}

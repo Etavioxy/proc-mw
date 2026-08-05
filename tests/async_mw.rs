@@ -42,6 +42,20 @@ fn async_chain_send_sync() {
     assert_eq!(h2.join().unwrap(), 12);
 }
 
+fn panicking_core(_ctx: &mut Ctx) -> Result<i32, MwError> {
+    panic!("async core bug");
+}
+
+#[test]
+fn async_core_panic_caught() {
+    let chain = AsyncChain::new(vec![Arc::new(AsyncAdd { n: 1 }) as Arc<dyn AsyncMw>]);
+    let r = futures::executor::block_on(chain.exec_catch(panicking_core, 5));
+    assert_eq!(r, Err(MwError::Rejected("core panicked")));
+    // 链 panic 后可复用
+    let r2 = futures::executor::block_on(chain.exec(core, 5)).unwrap();
+    assert_eq!(r2, 7);
+}
+
 #[test]
 fn async_overhead_quantified() {
     // async 链 vs 同步链的每调用开销（装箱 Future + poll）

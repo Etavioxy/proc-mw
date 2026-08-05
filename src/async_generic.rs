@@ -47,4 +47,27 @@ impl<R, O> AsyncChain<R, O> {
         ctx.output = Some(core(&mut ctx)?);
         Ok(ctx.output.take().expect("核心必须产出输出"))
     }
+
+    /// async 泛型通道的核心 panic 恢复（同步核心调用可 catch）
+    pub async fn exec_catch(
+        &self,
+        core: impl Fn(&mut Ctx<R, O>) -> Result<O, MwError>,
+        input: R,
+    ) -> Result<O, MwError> {
+        let mut ctx = Ctx::new(input);
+        for m in self.mws.iter() {
+            let flow = m.call(&mut ctx).await?;
+            if flow == Flow::Break {
+                return Err(MwError::Halted);
+            }
+        }
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| core(&mut ctx)));
+        match r {
+            Ok(r) => {
+                ctx.output = Some(r?);
+                Ok(ctx.output.take().expect("核心产出"))
+            }
+            Err(_) => Err(MwError::Rejected("core panicked")),
+        }
+    }
 }

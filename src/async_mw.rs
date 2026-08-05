@@ -107,4 +107,29 @@ impl AsyncChain {
         ctx.output = core(&mut ctx)?;
         Ok(ctx.output)
     }
+
+    /// async 通道的核心 panic 恢复：catch 住核心（同步调用）panic → MwError。
+    /// 注意：async 中间件自身的 panic 经 await 展开，由调用方 executor 的
+    /// catch_unwind 兜住（无法在 await 内同步 catch）。
+    pub async fn exec_catch(
+        &self,
+        core: impl Fn(&mut Ctx) -> Result<i32, MwError>,
+        input: i32,
+    ) -> Result<i32, MwError> {
+        let mut ctx = Ctx::new(input);
+        for m in self.mws.iter() {
+            let flow = m.call(&mut ctx).await?;
+            if flow == Flow::Break {
+                return Err(MwError::Halted);
+            }
+        }
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| core(&mut ctx)));
+        match r {
+            Ok(r) => {
+                ctx.output = r?;
+                Ok(ctx.output)
+            }
+            Err(_) => Err(MwError::Rejected("core panicked")),
+        }
+    }
 }
