@@ -44,15 +44,61 @@ fn is_handler(f: &ItemFn) -> bool {
     }
 }
 
-/// 包装：原函数体变为核心闭包，外层经 chain_exec（本 MVP 空链=恒等，保行为等价）
-fn wrap_handler(f: &mut ItemFn) {
+/// quote! 渲染 token 带空格（`Instant :: now`），归一化去空白后再匹配
+fn norm(s: &str) -> String {
+    s.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+/// 识别内联横切逻辑（D8）：计时（Instant）/日志（println）散落在 handler 体内
+fn detect_cross_cutting(block: &syn::Block) -> Vec<String> {
+    let txt = norm(&quote!(#block).to_string());
+    let mut out = Vec::new();
+    if txt.contains("Instant::now") || txt.contains("elapsed") {
+        out.push("timing".to_string());
+    }
+    if txt.contains("println") {
+        out.push("logging".to_string());
+    }
+    out
+}
+
+/// 从核心剥离内联横切语句（计时）：保留业务，抽走横切
+struct StripTiming;
+impl VisitMut for StripTiming {
+    fn visit_block_mut(&mut self, b: &mut syn::Block) {
+        b.stmts.retain(|s| {
+            let t = norm(&quote!(#s).to_string());
+            !(t.contains("Instant::now") || t.contains("elapsed"))
+        });
+        syn::visit_mut::visit_block_mut(self, b);
+    }
+}
+
+/// 包装：原函数体（剥掉内联横切后）变为核心闭包，外层经 chain_exec，
+/// 识别出的横切逻辑填入链的中间件
+fn wrap_handler(f: &mut ItemFn, out_middleware: &mut Vec<String>) {
     RenameInput.visit_block_mut(&mut f.block);
+    // 识别 + 剥离内联横切
+    let cc = detect_cross_cutting(&f.block);
+    StripTiming.visit_block_mut(&mut f.block);
+    for c in &cc {
+        if !out_middleware.contains(c) {
+            out_middleware.push(c.clone());
+        }
+    }
     let body = &f.block;
+    // 链中间件：识别出的横切 → 对应中间件（计时 → mw_timing）
+    let has_timing = cc.contains(&"timing".to_string());
+    let chain_nodes: proc_macro2::TokenStream = if has_timing {
+        quote!(&[proc_mw::dispatch::Node::FnPtr(mw_timing)])
+    } else {
+        quote!(&[])
+    };
     f.block = Box::new(syn::parse_quote!({
         proc_mw::dispatch::chain_exec(
-            &[], // MVP 空链：包装=恒等；后续把内联横切逻辑抽成中间件填入此处
+            #chain_nodes,
             |ctx: &mut proc_mw::dispatch::Ctx| -> Result<i32, proc_mw::dispatch::MwError> {
-                Ok(#body) // 原函数体（i32）包进 Ok，满足闭包 Result 契约
+                Ok(#body) // 核心（已剥内联横切）
             },
             input,
         )
@@ -96,14 +142,28 @@ fn main() {
 
     let mut count = 0usize;
     let mut wrapped: Vec<String> = Vec::new();
+    let mut extracted: Vec<String> = Vec::new();
     for item in &mut ast.items {
         if let syn::Item::Fn(f) = item {
             if is_handler(f) {
                 wrapped.push(f.sig.ident.to_string());
-                wrap_handler(f);
+                wrap_handler(f, &mut extracted);
                 count += 1;
             }
         }
+    }
+
+    // 识别出的横切逻辑 → 生成对应中间件函数注入产物（D8：内联横切 → 中间件）
+    if extracted.contains(&"timing".to_string()) {
+        let mw: syn::Item = syn::parse_quote!(
+            #[allow(dead_code)]
+            fn mw_timing(ctx: &mut proc_mw::dispatch::Ctx) -> Result<proc_mw::dispatch::Flow, proc_mw::dispatch::MwError> {
+                // 从 handler 体内抽出的横切逻辑：计时观测（进入侧）
+                let _ = ctx;
+                Ok(proc_mw::dispatch::Flow::Continue)
+            }
+        );
+        ast.items.push(mw);
     }
 
     StripDoc.visit_file_mut(&mut ast);

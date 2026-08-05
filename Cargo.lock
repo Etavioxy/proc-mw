@@ -28,6 +28,7 @@ version = "0.1.0"
 name = "d8_migrate"
 version = "0.1.0"
 dependencies = [
+ "proc-macro2",
  "proc-mw",
  "quote",
  "syn",

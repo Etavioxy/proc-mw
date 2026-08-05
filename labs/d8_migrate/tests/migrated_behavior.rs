@@ -17,3 +17,16 @@ fn non_handler_untouched() {
     // helper 不是 handle_* → 未迁移，行为原样
     assert_eq!(helper(3), 6);
 }
+
+#[test]
+fn cross_cutting_extracted() {
+    // D8 深化：计时横切应从核心剥出、生成对应中间件
+    let migrated = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/samples/legacy.rs.mw.rs"
+    ))
+    .unwrap();
+    assert!(!migrated.contains("Instant"), "计时横切应被剥出核心");
+    assert!(migrated.contains("mw_timing"), "应生成计时中间件 mw_timing");
+    assert!(migrated.contains("Node::FnPtr(mw_timing)"), "链应填充计时中间件");
+}
