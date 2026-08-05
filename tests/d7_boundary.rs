@@ -8,7 +8,7 @@ use std::any::Any;
 use std::sync::Arc;
 
 use proc_mw::chain::Chain;
-use proc_mw::dispatch::{chain_exec, Ctx, ExternNode, Flow, Mw, MwError, Node};
+use proc_mw::dispatch::{chain_exec, Ctx, ExternNode, MwError, Node};
 
 fn core(ctx: &mut Ctx) -> Result<i32, MwError> {
     Ok(ctx.input + 1)
@@ -90,6 +90,6 @@ fn contract_requires_no_panic() {
         }
     }
     let keep = Arc::new(()) as Arc<dyn Any + Send + Sync>;
-    assert_eq!(chain_exec(&[mk_node(reject_neg, keep)], core, -5), Err(MwError::Rejected("plugin")));
+    assert_eq!(chain_exec(&[mk_node(reject_neg, keep.clone())], core, -5), Err(MwError::Rejected("plugin")));
     assert_eq!(chain_exec(&[mk_node(reject_neg, keep)], core, 5), Ok(6));
 }
