@@ -1,6 +1,15 @@
-# 中间件系统实验工作区
-# 每个实验一个 crate，位于 experiments/<name>/
-# 约定：每个实验验证一个维度的"极致"，结论写入 experiments/<name>/RESULT.md
-[workspace]
-members = ["experiments/*"]
-resolver = "2"
+[package]
+name = "proc-mw"
+version = "0.1.0"
+edition = "2021"
+description = "生产 Service 语义 × 运行期热重载的中间件层 — 八维约束在同一项目中持续验证"
+
+[lib]
+name = "proc_mw"
+path = "src/lib.rs"
+
+[[example]]
+name = "d4_bench"
+path = "examples/d4_bench.rs"
+
+[dev-dependencies]

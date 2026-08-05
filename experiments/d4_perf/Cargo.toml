@@ -1,0 +1,7 @@
+[package]
+name = "d4_perf"
+version = "0.1.0"
+edition = "2021"
+description = "D4 性能·局部加法+空链透明：基准验证（含 Debug/Release 双构建）"
+
+[dependencies]
