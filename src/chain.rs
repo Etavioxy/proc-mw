@@ -60,6 +60,23 @@ impl Chain {
         }
     }
 
+    /// 重试原语（L5）：失败时重跑整条链（中间件+核心）最多 attempts 次
+    pub fn exec_retry(
+        &self,
+        core: impl Fn(&mut Ctx) -> Result<i32, MwError> + Copy,
+        input: i32,
+        attempts: u32,
+    ) -> Result<i32, MwError> {
+        let mut last_err = None;
+        for _ in 0..attempts {
+            match self.exec(core, input) {
+                Ok(v) => return Ok(v),
+                Err(e) => last_err = Some(e),
+            }
+        }
+        Err(last_err.unwrap_or(MwError::Halted))
+    }
+
     /// 写路径：复制快照 + 原子替换（RCU），Θ(len)，稀有操作
     pub fn add(&mut self, node: Node) {
         let mut v = (*self.nodes).clone();
