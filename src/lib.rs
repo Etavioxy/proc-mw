@@ -16,6 +16,7 @@
 
 pub mod async_mw;
 pub mod chain;
+pub mod compile;
 pub mod dispatch;
 pub mod generic;
 pub mod precompiled;

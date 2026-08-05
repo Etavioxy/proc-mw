@@ -45,6 +45,11 @@ name = "d6_string_plugin"
 path = "examples/d6_string_plugin.rs"
 required-features = ["runtime"]
 
+[[example]]
+name = "d6_runtime_compile"
+path = "examples/d6_runtime_compile.rs"
+required-features = ["runtime"]
+
 [dev-dependencies]
 futures = "0.3"
 
