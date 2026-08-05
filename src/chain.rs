@@ -43,6 +43,23 @@ impl Chain {
         }
     }
 
+    /// panic 恢复：核心（Rust 代码，可展开）panic 时 catch 住 → MwError，
+    /// 链保持可用（类似 web 框架 catch 处理器 panic）。
+    /// 注意：仅对 Rust 核心有效；extern C 插件 panic 是 abort（L3），catch 无效。
+    pub fn exec_catch(
+        &self,
+        core: impl Fn(&mut Ctx) -> Result<i32, MwError>,
+        input: i32,
+    ) -> Result<i32, MwError> {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.exec(core, input)
+        }));
+        match result {
+            Ok(r) => r,
+            Err(_) => Err(MwError::Rejected("core panicked")),
+        }
+    }
+
     /// 写路径：复制快照 + 原子替换（RCU），Θ(len)，稀有操作
     pub fn add(&mut self, node: Node) {
         let mut v = (*self.nodes).clone();
