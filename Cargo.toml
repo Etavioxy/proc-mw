@@ -69,10 +69,8 @@ name = "d6_compile_generic"
 path = "examples/d6_compile_generic.rs"
 required-features = ["runtime"]
 
-[dev-dependencies]
-futures = "0.3"
-
 [dependencies]
+futures = "0.3"
 libloading = { version = "0.9", optional = true }
 
 [features]

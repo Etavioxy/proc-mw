@@ -48,15 +48,20 @@ impl<R, O> AsyncChain<R, O> {
         Ok(ctx.output.take().expect("核心必须产出输出"))
     }
 
-    /// async 泛型通道的核心 panic 恢复（同步核心调用可 catch）
+    /// async 泛型通道的 panic 恢复：中间件调用（catch_unwind 包 poll）与核心都 catch
     pub async fn exec_catch(
         &self,
         core: impl Fn(&mut Ctx<R, O>) -> Result<O, MwError>,
         input: R,
     ) -> Result<O, MwError> {
+        use futures::FutureExt;
         let mut ctx = Ctx::new(input);
         for m in self.mws.iter() {
-            let flow = m.call(&mut ctx).await?;
+            let flow = match std::panic::AssertUnwindSafe(m.call(&mut ctx)).catch_unwind().await {
+                Ok(Ok(f)) => f,
+                Ok(Err(e)) => return Err(e),
+                Err(_) => return Err(MwError::Rejected("middleware panicked")),
+            };
             if flow == Flow::Break {
                 return Err(MwError::Halted);
             }

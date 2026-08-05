@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use proc_mw::async_mw::{AsyncAdd, AsyncChain, AsyncRejectNegative, AsyncMw};
-use proc_mw::dispatch::{Ctx, MwError};
+use proc_mw::dispatch::{Ctx, Flow, MwError};
 
 fn core(ctx: &mut Ctx) -> Result<i32, MwError> {
     Ok(ctx.input + 1)
@@ -44,6 +44,33 @@ fn async_chain_send_sync() {
 
 fn panicking_core(_ctx: &mut Ctx) -> Result<i32, MwError> {
     panic!("async core bug");
+}
+
+/// 自身会 panic 的 async 中间件
+struct PanicMw;
+impl AsyncMw for PanicMw {
+    fn call<'a>(
+        &'a self,
+        _ctx: &'a mut Ctx,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Flow, MwError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            panic!("async middleware bug");
+        })
+    }
+}
+
+#[test]
+fn async_middleware_panic_caught_chain_internal() {
+    // async 中间件自身 panic：链内 catch（不依赖调用方 executor）
+    let chain = AsyncChain::new(vec![Arc::new(PanicMw) as Arc<dyn AsyncMw>]);
+    let r = futures::executor::block_on(chain.exec_catch(core, 5));
+    assert_eq!(r, Err(MwError::Rejected("middleware panicked")));
+    // 链 panic 后可复用
+    let chain2 = AsyncChain::new(vec![Arc::new(AsyncAdd { n: 1 }) as Arc<dyn AsyncMw>]);
+    let r2 = futures::executor::block_on(chain2.exec_catch(core, 5)).unwrap();
+    assert_eq!(r2, 7);
 }
 
 #[test]
