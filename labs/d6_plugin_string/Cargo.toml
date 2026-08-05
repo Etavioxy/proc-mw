@@ -1,0 +1,8 @@
+[package]
+name = "d6_plugin_string"
+version = "0.1.0"
+edition = "2021"
+description = "D6 核心目的：类型无关 ABI 插件——动态编译的中间件操作 String 方法"
+
+[lib]
+crate-type = ["cdylib"]

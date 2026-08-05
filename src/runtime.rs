@@ -88,3 +88,56 @@ impl Plugin {
         })
     }
 }
+
+/// 类型无关插件加载器（核心目的：编译任意 Rust 代码粘合进中间层，L7）
+///
+/// ABI 用 `*mut c_void`（类型擦除指针）——插件在共享类型定义上编译，
+/// downcast 后调用任意类型的方法（`String::push`/`Vec::sort`/struct 字段）。
+/// 与 `Plugin`（i32 专用 ABI）的区别：此处宿主不感知具体类型，由插件契约决定。
+pub struct PluginOpaque {
+    _lib: Arc<libloading::Library>,
+    abi_version: i32,
+    enter: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32,
+    exit: Option<unsafe extern "C" fn(*mut std::ffi::c_void)>,
+}
+
+unsafe impl Send for PluginOpaque {}
+unsafe impl Sync for PluginOpaque {}
+
+impl PluginOpaque {
+    pub fn load(path: &str) -> Result<Self, String> {
+        unsafe {
+            let lib = libloading::Library::new(path).map_err(|e| format!("dlopen({path}): {e}"))?;
+            let ver_fn = *get_sym::<unsafe extern "C" fn() -> i32>(&lib, b"proc_mw_abi_version")
+                .map_err(|_| "缺 ABI 版本函数 proc_mw_abi_version".to_string())?;
+            let ver = unsafe { ver_fn() };
+            if ver != PLUGIN_ABI_VERSION {
+                return Err(format!("ABI 版本不匹配：插件 {} ≠ 宿主 {}", ver, PLUGIN_ABI_VERSION));
+            }
+            let enter = *get_sym::<unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32>(
+                &lib,
+                b"mw_enter",
+            )
+            .map_err(|_| "缺 mw_enter 符号".to_string())?;
+            let exit: Option<unsafe extern "C" fn(*mut std::ffi::c_void)> =
+                get_sym::<unsafe extern "C" fn(*mut std::ffi::c_void)>(&lib, b"mw_exit")
+                    .ok()
+                    .map(|s| *s);
+            Ok(PluginOpaque {
+                _lib: Arc::new(lib),
+                abi_version: ver,
+                enter,
+                exit,
+            })
+        }
+    }
+
+    pub fn abi_version(&self) -> i32 {
+        self.abi_version
+    }
+
+    /// 调用插件的 enter（宿主侧 downcast 由插件契约决定）
+    pub unsafe fn call(&self, req: *mut std::ffi::c_void, resp: *mut std::ffi::c_void) -> i32 {
+        unsafe { (self.enter)(req, resp) }
+    }
+}
