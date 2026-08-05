@@ -52,3 +52,44 @@ pub fn build_plugin(name: &str, middleware_source: &str, out_dir: &Path) -> Resu
     };
     Ok(crate_dir.join("target/release").join(format!("lib{crate_name}.{ext}")))
 }
+
+/// 源码简单哈希（FNV-1a 64 位）——编译缓存的键
+fn fnv1a64(data: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in data {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// 带缓存的编译：相同源码 → 直接复用已编译 .so（evcxr cache.rs 思路）。
+/// 缓存目录 `out_dir/proc_mw_compile_cache/`，键 = 源码哈希。
+pub fn build_plugin_cached(
+    name: &str,
+    middleware_source: &str,
+    out_dir: &Path,
+) -> Result<PathBuf, String> {
+    let cache_dir = out_dir.join("proc_mw_compile_cache");
+    fs::create_dir_all(&cache_dir).map_err(|e| format!("mkdir cache: {e}"))?;
+
+    let ext = if cfg!(target_os = "macos") {
+        "dylib"
+    } else if cfg!(target_os = "windows") {
+        "dll"
+    } else {
+        "so"
+    };
+    let hash = fnv1a64(middleware_source.as_bytes());
+    let cache_path = cache_dir.join(format!("{name}_{hash:016x}.{ext}"));
+
+    if cache_path.exists() {
+        // 缓存命中：复用，跳过编译
+        return Ok(cache_path);
+    }
+
+    // 缓存未命中：编译并把产物复制到缓存位置
+    let so = build_plugin(name, middleware_source, out_dir)?;
+    fs::copy(&so, &cache_path).map_err(|e| format!("写缓存: {e}"))?;
+    Ok(cache_path)
+}

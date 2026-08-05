@@ -43,7 +43,7 @@ pub fn exec<R, O>(
     }
     ctx.output = Some(core(&mut ctx)?);
     for m in nodes.iter().rev() {
-        m(&mut ctx);
+        let _ = m(&mut ctx); // 退出钩子：忽略其返回（MVP 简化）
     }
     Ok(ctx.output.take().expect("核心必须产出输出"))
 }

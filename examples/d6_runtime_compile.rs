@@ -6,7 +6,7 @@
 //! 运行：cargo run --features runtime --release --example d6_runtime_compile
 
 use proc_mw::chain::Chain;
-use proc_mw::compile::build_plugin;
+use proc_mw::compile::build_plugin_cached;
 use proc_mw::dispatch::{Ctx, MwError};
 use proc_mw::runtime::Plugin;
 
@@ -28,8 +28,17 @@ pub unsafe extern "C" fn mw_enter(input: *mut i32, _output: *mut i32) -> i32 {
 "#;
 
     let out_dir = std::env::temp_dir();
-    let so = build_plugin("runtime_mw", src, &out_dir).expect("运行期编译失败");
-    println!("运行期编译产物: {}", so.display());
+
+    // 首次编译（冷：真实 cargo 编译）
+    let t0 = std::time::Instant::now();
+    let so = build_plugin_cached("runtime_mw", src, &out_dir).expect("运行期编译失败");
+    println!("首次编译产物: {}（{:.1}s）", so.display(), t0.elapsed().as_secs_f64());
+
+    // 相同源码再次编译（热：缓存命中，跳过 cargo）
+    let t1 = std::time::Instant::now();
+    let so_cached = build_plugin_cached("runtime_mw", src, &out_dir).expect("缓存命中失败");
+    println!("相同源码缓存命中: {:.1}ms（跳过一次 cargo 编译）", t1.elapsed().as_secs_f64() * 1000.0);
+    assert_eq!(so, so_cached, "缓存必须复用同一产物");
 
     // dlopen 并粘合进链
     let plugin = Plugin::load(so.to_str().unwrap()).expect("dlopen 运行期中间件");
@@ -40,7 +49,7 @@ pub unsafe extern "C" fn mw_enter(input: *mut i32, _output: *mut i32) -> i32 {
 
     // 修改源码 → 重新编译 → 热更新（不停机换中间件逻辑）
     let src2 = src.replace("*= 7", "*= 10");
-    let so2 = build_plugin("runtime_mw_hot", &src2, &out_dir).expect("重编译失败");
+    let so2 = build_plugin_cached("runtime_mw_hot", &src2, &out_dir).expect("重编译失败");
     let p2 = Plugin::load(so2.to_str().unwrap()).unwrap();
     chain.set(0, p2.to_node()); // 快照内热替换
     let r2 = chain.exec(core, 5).unwrap();
