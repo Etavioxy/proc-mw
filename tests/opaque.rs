@@ -456,6 +456,42 @@ fn exec_catch_metrics_counts_panic_as_error() {
     assert_eq!(metrics.errors(), 1, "panic 兜住 → 计为错误（calls - successes）");
 }
 
+// ===== async 重试 × 超时（exec_retry_timeout：卡死尝试被终止并重试）=====
+
+/// 慢后快：前 N 次挂起（超时），之后成功
+struct SlowFlaky {
+    fail_left: Arc<AtomicUsize>,
+}
+impl OpaqueAsyncMw for SlowFlaky {
+    fn call<'a>(&'a self, req: *mut std::ffi::c_void) -> Pin<Box<dyn Future<Output = i32> + Send + 'a>> {
+        let addr = req as usize;
+        let fail_left = Arc::clone(&self.fail_left);
+        Box::pin(async move {
+            if fail_left.load(Ordering::SeqCst) > 0 {
+                fail_left.fetch_sub(1, Ordering::SeqCst);
+                futures::future::pending::<()>().await; // 挂起 → 超时终止
+            }
+            let o = unsafe { &mut *(addr as *mut Order) };
+            o.hops += 1;
+            OPAQUE_CONTINUE
+        })
+    }
+}
+
+#[test]
+fn async_opaque_exec_retry_timeout() {
+    use std::time::Instant;
+    let chain = OpaqueAsyncChain::new(vec![OpaqueAsyncNode::Async(Arc::new(SlowFlaky {
+        fail_left: Arc::new(AtomicUsize::new(2)),
+    }))]);
+    let mut o = order(1, 10);
+    let t = Instant::now();
+    let r = futures::executor::block_on(chain.exec_retry_timeout(|o| o.qty, &mut o, 5, Duration::from_millis(50)));
+    assert_eq!(r, Ok(10), "重试×超时后成功");
+    assert!(t.elapsed() < Duration::from_millis(500), "2 次超时(各50ms) + 1 成功");
+    assert_eq!(o.hops, 1, "只有成功尝试变换（克隆重放）");
+}
+
 // ===== 跨切 trace 注入（HasTrace trait + exec_with_trace，与 deadline 对称）=====
 
 #[derive(Clone)]

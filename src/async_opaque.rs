@@ -169,6 +169,29 @@ impl OpaqueAsyncChain {
         Err(last_err)
     }
 
+    /// 异步重试 × 超时（组合原语）：每次尝试限时 `per_attempt`，失败/超时重试至多 `n` 次。
+    /// 卡死的单次尝试被超时终止并重试（`exec_retry` 无超时会卡死，`exec_timeout` 无重试）。
+    pub async fn exec_retry_timeout<R: Send + Clone, O>(
+        &self,
+        core: impl Fn(&mut R) -> O + Send + Sync,
+        req: &mut R,
+        n: u32,
+        per_attempt: Duration,
+    ) -> Result<O, AsyncTimeoutError> {
+        let mut last = AsyncTimeoutError::Chain(0);
+        for _ in 0..n {
+            let mut attempt = req.clone();
+            match self.exec_timeout(&core, &mut attempt, per_attempt).await {
+                Ok(v) => {
+                    *req = attempt;
+                    return Ok(v);
+                }
+                Err(e) => last = e,
+            }
+        }
+        Err(last)
+    }
+
     /// 异步 panic 兜底（对齐 `async_mw::exec_catch`）：宿主侧 async 中间件 panic
     /// 被 `catch_unwind` 兜住（返回码 2，不崩溃）。插件 extern C panic = abort（L3 边界）。
     pub async fn exec_catch<R: Send, O>(
