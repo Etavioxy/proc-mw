@@ -1,0 +1,8 @@
+[package]
+name = "medium_service"
+version = "0.1.0"
+edition = "2021"
+description = "三档体量测试·中型：生成 ~万 LOC 多模块服务用 proc-mw 方法"
+
+[dependencies]
+proc-mw = { path = "../../..", features = ["runtime"] }
