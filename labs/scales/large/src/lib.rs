@@ -22,3 +22,12 @@ pub struct NetMsg {
     pub passed: bool, // 限流通过标记（链写入，供 bevy 侧判定）
 }
 
+/// 碰撞事件（S03）：去重
+#[derive(Event, Clone, Debug)]
+pub struct CollisionEvent {
+    pub a: u32,
+    pub b: u32,
+    pub resolved: bool, // 去重通过标记（插件写入）
+}
+
+
