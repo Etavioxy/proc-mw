@@ -79,6 +79,11 @@ path = "examples/d6_compile_generic.rs"
 required-features = ["runtime"]
 
 [[example]]
+name = "d6_load_latency"
+path = "examples/d6_load_latency.rs"
+required-features = ["runtime"]
+
+[[example]]
 name = "d7_plugin_memory"
 path = "examples/d7_plugin_memory.rs"
 required-features = ["runtime"]
