@@ -26,6 +26,7 @@ pub mod opaque;
 pub mod opaque_gov;
 pub mod circuit_breaker;
 pub mod metrics;
+pub mod migrate;
 pub mod precompiled;
 pub mod rate_limit;
 pub mod sandbox;
