@@ -465,6 +465,55 @@ pub struct Msg { pub text: [u8; 64], pub len: usize, pub matched: u8 }
     assert_eq!(m2.matched, 0, "regex 不应匹配 no-match");
 }
 
+/// 富化指纹：捕获**同 size/align 的字段重排**（朴素 size<<32|align 测不到）。
+/// 插件 `{a:u64,b:u8}` vs 宿主 `{b:u8,a:u64}` 同为 16B/8 对齐，但 (offset,size,align)
+/// 三元组序列不同 → 加载期拦截。
+#[test]
+fn plugin_field_reorder_detected_by_rich_fingerprint() {
+    let src = r#"
+#[repr(C)]
+pub struct Msg { pub a: u64, pub b: u8 }   // 插件：a 在前
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    let m = unsafe { &mut *(req as *mut Msg) };
+    m.a += 1;
+    0
+}
+#[no_mangle] pub extern "C" fn proc_mw_layout_fingerprint() -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &(off, sz, al) in &[
+        (std::mem::offset_of!(Msg, a), std::mem::size_of::<u64>(), std::mem::align_of::<u64>()),
+        (std::mem::offset_of!(Msg, b), std::mem::size_of::<u8>(), std::mem::align_of::<u8>()),
+    ] {
+        for &x in [off, sz, al].iter() { h ^= x as u64; h = h.wrapping_mul(0x100000001b3); }
+    }
+    h
+}
+"#;
+    let so = proc_mw::compile::build_plugin_cached("types_reorder", src, &std::env::temp_dir()).unwrap();
+    #[repr(C)]
+    struct Msg {
+        b: u8, // 宿主：b 在前（字段重排，同 16B/8 对齐）
+        a: u64,
+    }
+    let expected = proc_mw::runtime::layout_fingerprint_of(&[
+        (
+            std::mem::offset_of!(Msg, b),
+            std::mem::size_of::<u8>(),
+            std::mem::align_of::<u8>(),
+        ),
+        (
+            std::mem::offset_of!(Msg, a),
+            std::mem::size_of::<u64>(),
+            std::mem::align_of::<u64>(),
+        ),
+    ]);
+    match proc_mw::runtime::PluginOpaque::load_with_layout(so.to_str().unwrap(), expected) {
+        Err(msg) => assert!(msg.contains("布局指纹不匹配"), "字段重排应被富化指纹拦截"),
+        Ok(_) => panic!("同 size/align 字段重排必须被富化指纹拦截"),
+    }
+}
+
 /// 布局漂移检测：插件声明的共享类型与宿主期望布局不一致 → **加载期硬失败**
 /// （D7：防共享类型漂移导致运行期 UB；指纹 = size<<32|align）。
 /// 局限：同 size/align 的字段重排无法被此指纹捕获（列 limits.md），是显式边界。

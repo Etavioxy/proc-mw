@@ -94,6 +94,25 @@ pub fn layout_fingerprint<T>() -> u64 {
     (std::mem::size_of::<T>() as u64) << 32 | (std::mem::align_of::<T>() as u64)
 }
 
+/// 富化布局指纹（D7）：FNV-1a 哈希 over 每字段的 `(offset, size, align)` 三元组
+/// （按声明顺序）。
+///
+/// 捕获**同 size/align 的字段重排**——朴素 `size<<32|align` 测不到，且单纯哈希偏移
+/// 也测不到（声明顺序下偏移恒为 0,8,...）。只有 (offset,size,align) 三元组才能区分
+/// `{a:u64,b:u8}` 与 `{b:u8,a:u64}`（同为 16B/8 对齐但字段语义不同）。宿主用
+/// `offset_of!`/`size_of!`/`align_of!` 提供自己的字段布局，插件在共享类型定义里导出
+/// 同一哈希 → 漂移在加载期被拦截。
+pub fn layout_fingerprint_of(fields: &[(usize, usize, usize)]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &(off, sz, al) in fields {
+        for &x in [off, sz, al].iter() {
+            h ^= x as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+    }
+    h
+}
+
 /// 类型无关插件加载器（核心目的：编译任意 Rust 代码粘合进中间层，L7）
 ///
 /// ABI 用 `*mut c_void`（类型擦除指针）——插件在共享类型定义上编译，
