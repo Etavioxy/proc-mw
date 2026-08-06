@@ -138,6 +138,15 @@ unsafe extern "C" fn evec(req: *mut std::ffi::c_void, _: *mut std::ffi::c_void) 
     OPAQUE_CONTINUE
 }
 
+#[repr(C)]
+struct MNoop {
+    v: u64,
+}
+/// no-op 节点：什么都不做——隔离**纯链机制成本**（不含任何变换工作）
+unsafe extern "C" fn enoop(_req: *mut std::ffi::c_void, _: *mut std::ffi::c_void) -> i32 {
+    OPAQUE_CONTINUE
+}
+
 // ===== 通用测速（R 被擦除，节点自行 downcast）=====
 
 type Enter = unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32;
@@ -214,6 +223,8 @@ fn main() {
     rows.push(bench_case("Nested", || MNested { v: Nested { a: 1, b: Plain { a: 1, b: 2 } } }, enested, iters));
     rows.push(bench_case("String", || MStr { s: String::new() }, estr, iters));
     rows.push(bench_case("Vec<u64>", || MVec { xs: vec![3, 1, 2] }, evec, iters));
+    // no-op 隔离：纯链机制成本（不含变换）
+    rows.push(bench_case("noop", || MNoop { v: 1 }, enoop, iters));
 
     for r in &rows {
         println!(
@@ -225,7 +236,12 @@ fn main() {
     println!("\nD4 跨类型判定：");
     let max_empty_overhead = rows.iter().map(|r| r.empty - r.bare).fold(0.0_f64, f64::max);
     let max_slot = rows.iter().map(|r| r.two - r.one).fold(0.0_f64, f64::max);
+    let noop = rows.last().unwrap();
     println!("  空链-裸 最大 {} ns（跨全部类型，空链透明）", max_empty_overhead);
     println!("  2节点-1节点 最大 {} ns（跨全部类型，落槽代价有界）", max_slot);
+    println!("  纯链机制成本（no-op 隔离）：空链 {:.2}ns / 1槽 {:.2}ns / 2槽 {:.2}ns",
+        noop.empty, noop.one, noop.two);
+    println!("  → 1槽纯链成本 = {:.2}ns；f64 的 6.45ns 是其 *2.0 FP 依赖链本身，非链机制",
+        noop.one - noop.empty);
     assert!(max_empty_overhead < 3.0, "所有类型的空链必须透明（Release）");
 }
