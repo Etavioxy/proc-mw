@@ -37,8 +37,9 @@
 4. ~~**布局指纹增强（D7）**~~ ✅ 已闭环（(offset,size,align) 三元组，b19ee2d）。
 
 ## 待推边（最终裁决）
-- ~~**async 任意类型链**~~ ✅ 已闭环（baf7c7a + 04d7796）：OpaqueAsyncChain + 真实 await 进
-  flume 生产路径（send_async）；extern "C" 无法安全导出 async 是显式边界。
+- ~~**async 任意类型链**~~ ✅ 已闭环（baf7c7a + 04d7796 + 6e9633d）：OpaqueAsyncChain +
+  真实 await 进 flume 生产路径（send_async）；**exec_timeout 取消挂死中间件**
+  （select 竞速，同步 DeadlineCheck 做不到）；extern "C" 无法安全导出 async 是显式边界。
 - ~~**任意类型沙箱（D7 信任模型）**~~ ✅ 已闭环 + 边界裁决（8e162d1 + 推理）：
   字节编组沙箱适用 repr(C)/POD；**堆类型（String/Vec/Box）含进程内指针，跨进程编组
   物理上失效**（marshalling 与零拷贝 c_void 模型冲突是根本边界，非可解缺口）——
