@@ -30,24 +30,24 @@
 | D7 安全 | 返回码契约 + 沙箱隔离 + ABI 版本 + 错误路径 + Send/Sync |
 | D8 迁移 | 识别/抽取/包装/多文件/回滚 |
 
-## 三、七条极限（L1~L7）
+## 三、七条极限（L1~L7 + L7b）
 
 | 极限 | 状态 |
 |---|---|
-| **L1** D4 空链 Debug 有界(非无异) | **待你定案**：接受"有界" vs 设计绕过 |
-| **L2** D3 快照克隆×D2 开放槽位 → box_clone | **待你定案**：接受契约 vs 换存储模型 |
-| L3 插件 panic 跨 extern C = abort | 已定案：返回码 + 沙箱 + 永不卸载（内存有界，已量化） |
-| L4 chain-as-function 编译隔离牺牲 | 已定案：双轨（稳定形状预编译/演进形状动态） |
-| L5 语义完备性缺口 | 已大幅收窄：recover/timeout/rate-limit/retry/circuit-breaker/parallel 全实现 |
-| L6 async dyn 每调用 24B 装箱 | 已定案：接受（动态+异步的组合报价） |
+| **L1** D4 空链 Debug 有界 | **已定案（数据支撑）**：开销分解 = Debug 构建特性（Ctx/Result 仅 2.5ns，框架非内联 14ns），接受"有界" |
+| **L2** D3 克隆×D2 开放槽位 | **已消除**：开放槽位 Box→Arc，Mw 不再需要 box_clone 契约 |
+| L3 插件 panic 跨 extern C = abort | 已定案：返回码 + 沙箱 + 永不卸载（内存有界已量化） |
+| L4 chain-as-function 编译隔离牺牲 | 已定案：双轨（稳定预编译/演进动态） |
+| L5 语义完备性缺口 | 已收窄：recover/timeout/rate-limit/retry/circuit-breaker/parallel 全实现 |
+| L6 async dyn 每调用 24B 装箱 | 已定案：接受（动态+异步组合报价） |
 | L7 插件 ABI 锁死 i32 | 已修复：c_void 类型无关 ABI |
+| L7b rustc_driver 集成 | **环境阻塞**：nightly 已装，rustc-dev 组件下载官方+镜像均失败（网络）→ cargo 管线为务实选择 |
 
-## 四、剩余决策（需用户参与）
+## 四、剩余项
 
-1. **L1**：Debug 空链透明，接受"有界（30ns 验收）"还是设计绕过（API 形状变更）？
-2. **L2**：box_clone 契约，接受（每个开放中间件实现克隆）还是换存储模型？
-3. **rustc_driver**：需 `rustup component add rustc-dev` + nightly 工具链（环境改造，非设计问题）
+1. **rustc_driver**：网络阻塞（环境项）。cargo 子进程管线已实现核心目的；rustc_driver 是可选优化（去 cargo 依赖），网络恢复可再试。
+2. 无未决设计决策——L1/L2 已通过实验/实现解决。
 
 ## 五、测试规模
 
-30 套测试套件（`--workspace`），覆盖：四通道行为、panic 全矩阵、原语全栈、运行期编译、沙箱、迁移、并发、配置、追踪。
+33 套测试套件（`--workspace`），覆盖：四通道行为、panic 全矩阵（sync/async × 核心/中间件）、韧性原语全栈、运行期编译（缓存/诊断/资源/并发）、沙箱、迁移、配置、追踪、观测、并发。
