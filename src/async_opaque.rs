@@ -147,6 +147,20 @@ impl OpaqueAsyncChain {
         Ok(out)
     }
 
+    /// 异步降级执行（对齐 sync `exec_or`）：链拒绝（返回码）时走 fallback（恢复/降级）。
+    /// async 链语义原语完整（exec/retry/catch/timeout/or）。
+    pub async fn exec_or<R: Send, O>(
+        &self,
+        core: impl Fn(&mut R) -> O + Send + Sync,
+        req: &mut R,
+        fallback: impl Fn(&mut R) -> O + Send + Sync,
+    ) -> O {
+        match self.exec(core, req).await {
+            Ok(v) => v,
+            Err(_) => fallback(req),
+        }
+    }
+
     /// 异步 trace 注入（对齐 sync `exec_with_trace`）：请求实现 `HasTrace` → 注入后执行。
     /// 与 `exec_timeout_with_deadline` 对称（async 上下文跨切完整：deadline + trace）。
     pub async fn exec_with_trace<R: Send + HasTrace, O>(

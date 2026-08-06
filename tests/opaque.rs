@@ -520,6 +520,30 @@ fn async_opaque_exec_retry_timeout() {
     assert_eq!(o.hops, 1, "只有成功尝试变换（克隆重放）");
 }
 
+// ===== async exec_or（对齐 sync：拒绝时降级 fallback）=====
+
+#[test]
+fn async_opaque_exec_or_fallback() {
+    let chain = OpaqueAsyncChain::new(vec![OpaqueAsyncNode::Sync(OpaqueNode::Stateful(Arc::new(
+        Flaky {
+            fail_left: Arc::new(AtomicUsize::new(1)),
+        },
+    )))]);
+    // 第 1 次拒绝 → fallback（fallback 改 qty=0）；第 2 次新请求成功（Flaky 放行）
+    let mut o1 = order(1, 10);
+    let r1 = futures::executor::block_on(chain.exec_or(|o| o.qty, &mut o1, |o| {
+        o.qty = 0;
+        o.qty
+    }));
+    assert_eq!(r1, 0, "async 拒绝时降级");
+    let mut o2 = order(1, 10);
+    let r2 = futures::executor::block_on(chain.exec_or(|o| o.qty, &mut o2, |o| {
+        o.qty = 0;
+        o.qty
+    }));
+    assert_eq!(r2, 10, "async 放行时不经 fallback");
+}
+
 // ===== async 跨切 trace（exec_with_trace，与 deadline 对称）=====
 
 #[test]
