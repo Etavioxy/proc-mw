@@ -95,4 +95,11 @@ pub struct WorldState {
     pub updated: bool,
 }
 
+/// 实体事件（实验：真实 bevy 类型兼容）——含 `bevy_ecs::entity::Entity`
+#[derive(Event, Clone, Debug)]
+pub struct EntityEvent {
+    pub entity: bevy_ecs::entity::Entity, // **真实 bevy 生态类型**（非合成）
+    pub kept: bool,                       // 实体保留标记（插件写入）
+}
+
 
