@@ -159,6 +159,24 @@ impl OpaqueChain {
         }
         Ok(out)
     }
+
+    /// 重试执行（语义原语，对齐 `chain::exec_retry`）：链失败（返回码 ≠0）时重试
+    /// 至多 `n` 次，成功立即返回。请求每次重试重新过链（无状态变换可安全重放）。
+    pub fn exec_retry<R, O>(
+        &self,
+        core: impl Fn(&mut R) -> O,
+        req: &mut R,
+        n: u32,
+    ) -> Result<O, i32> {
+        let mut last_err = 0i32;
+        for _ in 0..n {
+            match self.exec(&core, req) {
+                Ok(v) => return Ok(v),
+                Err(e) => last_err = e,
+            }
+        }
+        Err(last_err)
+    }
 }
 
 #[cfg(test)]

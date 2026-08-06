@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use proc_mw::async_opaque::{OpaqueAsyncChain, OpaqueAsyncMw, OpaqueAsyncNode};
-use proc_mw::opaque::{OpaqueChain, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
+use proc_mw::opaque::{OpaqueChain, OpaqueMw, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
 use proc_mw::opaque_gov::{OpaqueMetrics, OpaqueRateLimiter};
 
 /// 共享类型（repr(C)：宿主与插件各自定义同一布局）
@@ -392,6 +392,44 @@ fn sandbox_crash_isolation_for_panicking_plugin() {
     assert!(sb.run_bytes(&[0u8; 24]).is_err(), "崩溃后需重启");
     sb.restart().expect("重启沙箱不炸宿主");
     assert!(sb.run_bytes(&[0u8; 24]).is_err(), "重启后同插件仍崩，但宿主一直存活");
+}
+
+// ===== OpaqueChain::exec_retry（语义原语，对齐 chain::exec_retry）=====
+
+/// flaky 节点：前 N 次失败（返回码 2），之后成功
+struct Flaky {
+    fail_left: Arc<AtomicUsize>,
+}
+impl OpaqueMw for Flaky {
+    fn enter(&self, _req: *mut std::ffi::c_void) -> i32 {
+        if self.fail_left.load(Ordering::SeqCst) > 0 {
+            self.fail_left.fetch_sub(1, Ordering::SeqCst);
+            OPAQUE_REJECT
+        } else {
+            OPAQUE_CONTINUE
+        }
+    }
+}
+
+#[test]
+fn opaque_exec_retry_succeeds_then_exhausts() {
+    // 前 2 次失败 + retry 5 → 最终成功
+    let fail_left = Arc::new(AtomicUsize::new(2));
+    let chain = OpaqueChain::new(vec![
+        OpaqueNode::Stateful(Arc::new(Flaky { fail_left: fail_left.clone() })),
+        node(discount),
+    ]);
+    let mut o = order(1, 10);
+    let r = chain.exec_retry(|o| o.qty, &mut o, 5).unwrap();
+    assert_eq!(r, 9, "重试后成功（qty 10→9）");
+    // 前 3 次失败 + retry 1 → 耗尽透传错误
+    let fail_left2 = Arc::new(AtomicUsize::new(3));
+    let chain2 = OpaqueChain::new(vec![
+        OpaqueNode::Stateful(Arc::new(Flaky { fail_left: fail_left2.clone() })),
+        node(discount),
+    ]);
+    let mut o2 = order(1, 10);
+    assert_eq!(chain2.exec_retry(|o| o.qty, &mut o2, 1), Err(OPAQUE_REJECT), "重试耗尽");
 }
 
 // ===== 交叉确认：Ctx 链 = OpaqueChain 的 R=Ctx 特化（消灭"两条并行链"）=====
