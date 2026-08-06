@@ -84,6 +84,11 @@ path = "examples/d6_load_latency.rs"
 required-features = ["runtime"]
 
 [[example]]
+name = "d1_opaque_memory"
+path = "examples/d1_opaque_memory.rs"
+required-features = ["runtime"]
+
+[[example]]
 name = "d7_plugin_memory"
 path = "examples/d7_plugin_memory.rs"
 required-features = ["runtime"]
