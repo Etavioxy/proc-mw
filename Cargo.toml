@@ -9,7 +9,7 @@ description = "生产 Service 语义 × 运行期热重载的中间件层 — �
 # labs/d5_incremental、labs/d2_compile_scale 是自包含子 workspace（多 crate 实验），从根排除。
 [workspace]
 members = ["labs/*"]
-exclude = ["labs/d5_incremental", "labs/d2_compile_scale", "labs/d5_lto"]
+exclude = ["labs/d5_incremental", "labs/d2_compile_scale", "labs/d5_lto", "labs/rustc_driver_probe"]
 resolver = "2"
 
 [lib]

@@ -9,32 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "d6_plugin"
-version = "0.1.0"
-
-[[package]]
-name = "d6_plugin_bad"
-version = "0.1.0"
-
-[[package]]
-name = "d6_plugin_string"
-version = "0.1.0"
-
-[[package]]
-name = "d6_plugin_v2"
-version = "0.1.0"
-
-[[package]]
-name = "d8_migrate"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "proc-mw",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "futures"
 version = "0.3.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -173,6 +147,9 @@ dependencies = [
 [[package]]
 name = "rustc_driver_probe"
 version = "0.1.0"
+dependencies = [
+ "proc-mw",
+]
 
 [[package]]
 name = "slab"

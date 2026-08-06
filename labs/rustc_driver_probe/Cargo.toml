@@ -1,0 +1,15 @@
+[package]
+name = "rustc_driver_probe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+proc-mw = { path = "../..", features = ["runtime"] }
+
+[[bin]]
+name = "rustc_driver_probe"
+path = "src/main.rs"
+
+[[bin]]
+name = "full_pipeline"
+path = "src/bin/full_pipeline.rs"

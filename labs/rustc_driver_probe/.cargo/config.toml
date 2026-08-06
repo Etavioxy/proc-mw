@@ -1,0 +1,12 @@
+# rustc_driver 链接配置：sysroot -L（libLLVM.dylib 在 lib/，rustc_driver 在 rustlib）
+[build]
+rustflags = [
+    "-Zunstable-options",
+    "-Zforce-unstable-if-unmarked",
+    "-L",
+    "native=${HOME}/.rustup/toolchains/nightly-aarch64-apple-darwin/lib",
+    "-L",
+    "native=${HOME}/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/lib",
+    "-C",
+    "link-args=-Wl,-rpath,${HOME}/.rustup/toolchains/nightly-aarch64-apple-darwin/lib",
+]
