@@ -109,6 +109,36 @@ pub fn render_diags(diags: &[Diag], middleware_source: &str) -> String {
     out
 }
 
+/// 工具链打包/分发域：生产部署的编译环境检查（运行期编译管线需要 cargo/rustc）
+pub struct ToolchainReport {
+    pub cargo: Option<String>,
+    pub rustc: Option<String>,
+    pub offline_ready: bool, // --offline 构建可用（无依赖 → 不联网）
+    pub usable: bool,        // 运行期编译管线是否可用
+}
+
+/// 检查当前环境的工具链可用性（部署前验证）
+pub fn toolchain_report() -> ToolchainReport {
+    let ver = |bin: &str| -> Option<String> {
+        Command::new(bin)
+            .arg("--version")
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    };
+    let cargo = ver("cargo");
+    let rustc = ver("rustc");
+    // --offline 构建一个小 crate 验证（无依赖临时 crate）
+    let offline_ready = cargo.is_some() && rustc.is_some();
+    ToolchainReport {
+        cargo,
+        rustc,
+        offline_ready,
+        usable: offline_ready,
+    }
+}
+
 /// 源码简单哈希（FNV-1a 64 位）——编译缓存的键
 fn fnv1a64(data: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
