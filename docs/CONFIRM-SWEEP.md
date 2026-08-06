@@ -37,12 +37,15 @@
 4. ~~**布局指纹增强（D7）**~~ ✅ 已闭环（(offset,size,align) 三元组，b19ee2d）。
 
 ## 下一轮待推边（新发现）
-- **async 任意类型链**：async_mw/async_generic 是 i32 或编译期泛型，**无 async 运行期加载
-  中间件**——任意类型 + 真实 await + 运行期编译三者未同时成立。大工程。
+- ~~**async 任意类型链**~~ ✅ 已闭环（baf7c7a）：OpaqueAsyncChain——运行期编译同步插件 +
+  宿主异步节点真实 await；extern "C" 无法安全导出 async 是显式边界。
 - **任意类型沙箱（D7 信任模型）**：subprocess 沙箱（sandbox.rs/mw_exec）是 i32 stdin/stdout，
-  任意类型请求需编组（marshalling）——与零拷贝 c_void 共享内存模型冲突，需显式记录为边界。
-- **有状态插件热更**：热替换到新 .dylib 时插件内部状态归零（旧 .dylib 保活但新版本全新）——
-  设计原则"状态放宿主 Stateful 节点"，需实验记录。
+  任意类型请求需编组（marshalling）——与零拷贝 c_void 共享内存模型冲突。**待推。**
+- ~~**有状态插件热更**~~ ✅ 已实证（960096c）：新 .dylib 状态归零，旧 .dylib 保活独立；
+  设计原则固化"状态放宿主 Stateful 节点，插件应为无状态变换"。
+- **直接共享类型**（usergoals，4050c52）：非 repr(C) 类型经 crate 依赖直接共享（bevy 兼容
+  路径）——非 repr(C) 布局不需要手工镜像，共享 crate 保证同一定义。**这是 large（bevy）
+  场景落地的前提。**
 
 ## 推边判定（每推完一条，回到本表更新状态）
 > 循环：推边 → 全量回归 → 原子提交 → 更新本表 → 推下一条。
