@@ -89,6 +89,33 @@ impl Plugin {
     }
 }
 
+/// 命名插件注册表（生产模式）：插件按名注册，配置/链可按名引用。
+/// 热更 = 重新注册同名插件（原子替换）。
+#[derive(Default)]
+pub struct PluginRegistry {
+    plugins: std::sync::Mutex<std::collections::HashMap<String, Arc<PluginOpaque>>>,
+}
+
+impl PluginRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 按名注册插件（原子替换同名）
+    pub fn register(&self, name: &str, plugin: PluginOpaque) {
+        self.plugins.lock().unwrap().insert(name.to_string(), Arc::new(plugin));
+    }
+
+    /// 按名取插件节点（Thin）
+    pub fn get_node(&self, name: &str) -> Option<crate::opaque::OpaqueNode> {
+        self.plugins.lock().unwrap().get(name).map(|p| p.to_node())
+    }
+
+    pub fn len(&self) -> usize {
+        self.plugins.lock().unwrap().len()
+    }
+}
+
 /// 共享类型布局指纹（D7）：`size<<32 | align`。宿主用它校验插件共享类型布局一致。
 pub fn layout_fingerprint<T>() -> u64 {
     (std::mem::size_of::<T>() as u64) << 32 | (std::mem::align_of::<T>() as u64)

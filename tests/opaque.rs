@@ -281,6 +281,37 @@ pub struct Order { pub id: u64, pub qty: i64, pub hops: u32 }
     assert_eq!(chain.exec(|o| o.qty, &mut m2).unwrap(), 15, "失败热更后旧中间件保持（可回滚）");
 }
 
+// ===== 命名插件注册表 + 配置 @name 引用（生产模式）=====
+
+#[test]
+fn plugin_registry_config_reference() {
+    use proc_mw::config::build_opaque_chain_with_registry;
+    use proc_mw::runtime::PluginRegistry;
+    let src = r#"
+#[repr(C)]
+pub struct Order { pub id: u64, pub qty: i64, pub hops: u32 }
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    let o = unsafe { &mut *(req as *mut Order) };
+    o.qty -= 1;
+    o.hops += 1;
+    0
+}
+"#;
+    let so = proc_mw::compile::build_plugin_cached("reg_plugin", src, &std::env::temp_dir()).unwrap();
+    let p = proc_mw::runtime::PluginOpaque::load(so.to_str().unwrap()).unwrap();
+    let registry = PluginRegistry::new();
+    registry.register("discount", p);
+    // 配置引用：metrics + @discount
+    let chain = build_opaque_chain_with_registry(&["metrics", "@discount"], &registry).unwrap();
+    assert_eq!(chain.len(), 2);
+    let mut o = order(1, 10);
+    assert_eq!(chain.exec(|o| o.qty, &mut o).unwrap(), 9, "@discount 插件经配置引用生效");
+    // 未注册引用明确报错
+    assert!(build_opaque_chain_with_registry(&["@nope"], &registry).is_err(), "未注册插件报错");
+    assert_eq!(registry.len(), 1);
+}
+
 // ===== 链类型无关性：同一链实例处理多种请求类型（D2 类型无关）=====
 
 #[test]

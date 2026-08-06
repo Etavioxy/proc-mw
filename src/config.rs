@@ -12,6 +12,7 @@ use crate::metrics::Metrics;
 use crate::opaque::{OpaqueBuiltin, OpaqueChain, OpaqueNode};
 use crate::opaque_gov::{OpaqueMetrics, OpaqueRateLimiter};
 use crate::rate_limit::RateLimiter;
+use crate::runtime::PluginRegistry;
 
 /// 从中间件 spec 构建链。每个 spec 项 = 中间件名（可带参数）。
 /// 未知名称 → 明确报错（配置校验）。
@@ -57,6 +58,26 @@ pub fn build_opaque_chain(spec: &[&str]) -> Result<OpaqueChain, String> {
     let mut nodes = Vec::with_capacity(spec.len());
     for s in spec {
         nodes.push(parse_opaque_node(s)?);
+    }
+    Ok(OpaqueChain::new(nodes))
+}
+
+/// 带注册表的配置构建：`@name` 引用已注册插件，其余同 `build_opaque_chain`
+pub fn build_opaque_chain_with_registry(
+    spec: &[&str],
+    registry: &PluginRegistry,
+) -> Result<OpaqueChain, String> {
+    let mut nodes = Vec::with_capacity(spec.len());
+    for s in spec {
+        if let Some(name) = s.strip_prefix('@') {
+            nodes.push(
+                registry
+                    .get_node(name)
+                    .ok_or_else(|| format!("未注册插件: {name}"))?,
+            );
+        } else {
+            nodes.push(parse_opaque_node(s)?);
+        }
     }
     Ok(OpaqueChain::new(nodes))
 }
