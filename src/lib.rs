@@ -22,6 +22,7 @@ pub mod config;
 pub mod dispatch;
 pub mod generic;
 pub mod circuit_breaker;
+pub mod metrics;
 pub mod precompiled;
 pub mod rate_limit;
 pub mod sandbox;
