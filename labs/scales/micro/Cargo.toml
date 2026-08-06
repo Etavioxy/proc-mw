@@ -6,3 +6,5 @@ description = "三档体量测试·微系统：小服务用 proc-mw 全套方法
 
 [dependencies]
 proc-mw = { path = "../../..", features = ["runtime"] }
+# 直接共享类型（usergoals 非双写声明）
+shared_types = { path = "../../../labs/shared_types" }
