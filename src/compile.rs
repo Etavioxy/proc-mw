@@ -65,11 +65,25 @@ pub fn build_plugin_with_deps(
         cmd.arg("--offline");
     }
     let _guard = BUILD_LOCK.lock().unwrap(); // 串行化：共享 target-dir 并发安全
-    let out = match cmd.output() {
-        Ok(o) => o,
-        Err(e) => {
-            let _ = fs::remove_dir_all(&crate_dir); // 失败也清理临时目录（防泄漏）
-            return Err(format!("cargo 不可用: {e}"));
+    let run = |offline: bool| -> Result<std::process::Output, String> {
+        let mut c = Command::new("cargo");
+        c.args(["build", "--release"]).current_dir(&crate_dir);
+        c.arg("--target-dir").arg(&shared_target);
+        if offline {
+            c.arg("--offline");
+        }
+        c.output().map_err(|e| {
+            let _ = fs::remove_dir_all(&crate_dir);
+            format!("cargo 不可用: {e}")
+        })
+    };
+    let out = if deps.trim().is_empty() {
+        run(true)? // 无依赖：--offline
+    } else {
+        // 有依赖：offline 优先（依赖已缓存免网络），失败回退在线
+        match run(true) {
+            Ok(o) if o.status.success() => o,
+            _ => run(false)?,
         }
     };
     if !out.status.success() {
