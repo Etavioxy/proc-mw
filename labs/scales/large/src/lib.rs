@@ -30,4 +30,69 @@ pub struct CollisionEvent {
     pub resolved: bool, // 去重通过标记（插件写入）
 }
 
+/// AI 决策（S04）：硬时限
+#[derive(Event, Clone, Debug)]
+pub struct AiDecision {
+    pub depth: u32,
+    pub deadline_ms: u64, // 截止时间戳；u64::MAX = 无限制
+    pub decided: bool,    // 决策完成标记
+}
+
+/// 资源加载（S05）：重试
+#[derive(Event, Clone, Debug)]
+pub struct AssetLoad {
+    pub path: String,
+    pub loaded: bool,
+}
+
+/// 存档（S06）：校验
+#[derive(Event, Clone, Debug)]
+pub struct SaveData {
+    pub gold: i64,
+    pub valid: bool, // 校验通过标记
+}
+
+/// 渲染批次（S07）：内存上限
+#[derive(Event, Clone, Debug)]
+pub struct RenderBatch {
+    pub sprite_count: u32,
+    pub accepted: bool,
+}
+
+/// 事件总线消息（S08）：降级
+#[derive(Event, Clone, Debug)]
+pub struct BusEvent {
+    pub kind: u8,
+    pub delivered: bool,
+}
+
+/// 行为树分支（S09）：并行
+#[derive(Event, Clone, Debug)]
+pub struct BehaviorBranch {
+    pub branch: u32,
+    pub ran: bool,
+}
+
+/// 动画转换（S10）：熔断
+#[derive(Event, Clone, Debug)]
+pub struct AnimTransition {
+    pub from: u8,
+    pub to: u8,
+    pub ok: bool,
+}
+
+/// UI 事件（S11）：节流
+#[derive(Event, Clone, Debug)]
+pub struct UiEvent {
+    pub click: u32,
+    pub passed: bool,
+}
+
+/// 世界状态（S12）：热更
+#[derive(Event, Clone, Debug)]
+pub struct WorldState {
+    pub drop_rate: f32,
+    pub updated: bool,
+}
+
 
