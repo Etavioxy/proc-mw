@@ -196,6 +196,50 @@ fn opaque_builtin_closed_inline_slot() {
     assert_eq!(c.exec(|o| o.qty, &mut o).unwrap(), 9, "开关热更后放行");
 }
 
+// ===== 交叉确认：Ctx 链 = OpaqueChain 的 R=Ctx 特化（消灭"两条并行链"）=====
+
+/// i32 时代的 `Ctx { input, output, trace_id }` 作为**共享类型**走 OpaqueChain：
+/// 治理（metrics/限流）+ 运行期编译插件（操作 CtxOpaque 字段）全在同一个任意类型链上。
+/// 证明 OpaqueChain 是通用机制，i32 Ctx 链只是它的一个特化（R=Ctx），而非并行系统。
+#[test]
+fn ctx_chain_is_opaque_specialization() {
+    #[repr(C)]
+    struct CtxOpaque {
+        input: i32,
+        output: i32,
+        trace_id: u64,
+    }
+    // 运行期编译插件：操作 CtxOpaque（等价旧 audit `*input += 5`，但类型是 struct）
+    let src = r#"
+#[repr(C)]
+pub struct CtxOpaque { pub input: i32, pub output: i32, pub trace_id: u64 }
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    let c = unsafe { &mut *(req as *mut CtxOpaque) };
+    c.input += 5;
+    0
+}
+"#;
+    let so = proc_mw::compile::build_plugin_cached("ctx_audit", src, &std::env::temp_dir()).unwrap();
+    let p = proc_mw::runtime::PluginOpaque::load(so.to_str().unwrap()).unwrap();
+    // 同一 OpaqueChain 机制：治理（metrics/限流）+ 运行期编译变换
+    let m = Arc::new(OpaqueMetrics::new());
+    let chain = OpaqueChain::new(vec![
+        OpaqueNode::Stateful(m.clone()),
+        OpaqueNode::Stateful(Arc::new(OpaqueRateLimiter::new(100, Duration::from_secs(10)))),
+        p.to_node(),
+    ]);
+    for i in 1..=3 {
+        let mut c = CtxOpaque { input: i, output: 0, trace_id: 0 };
+        let out = chain.exec(|c| c.input, &mut c).unwrap();
+        assert_eq!(out, i + 5, "运行期编译插件对 CtxOpaque.input 加 5");
+        assert_eq!(c.output, 0, "output 未被插件改写");
+    }
+    assert_eq!(m.calls(), 3, "治理层经同一机制计数");
+    assert_eq!(m.successes(), 3);
+    assert_eq!(m.errors(), 0);
+}
+
 // ===== 治理层迁移：类型无关治理在任意类型链上（不再 i32 Ctx 锚定）=====
 
 #[test]
