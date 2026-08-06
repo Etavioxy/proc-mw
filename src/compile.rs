@@ -16,26 +16,45 @@ static COUNTER: AtomicU32 = AtomicU32::new(0);
 /// 编译中间件源码为 cdylib，返回 .so/.dylib 路径。
 /// `middleware_source` 须导出 `proc_mw_abi_version()` 与 `mw_enter`（+可选 `mw_exit`）。
 pub fn build_plugin(name: &str, middleware_source: &str, out_dir: &Path) -> Result<PathBuf, String> {
+    build_plugin_with_deps(name, middleware_source, "", out_dir)
+}
+
+/// 编译中间件源码为 cdylib，支持**外部 crate 依赖**（`deps` = Cargo.toml `[dependencies]`
+/// 段内容，空串 = 无依赖）。
+///
+/// 依赖策略：`deps` 为空 → `--offline`（无依赖不必联网更新索引）；`deps` 非空 → 走在线
+/// （cargo 解析并利用共享注册表缓存；未缓存的会从 crates.io 拉取）。这补齐了
+/// "任意 Rust 代码"的外部 crate 域（evcxr `:dep` 对应物）——中间件可用 serde/regex/rand 等。
+pub fn build_plugin_with_deps(
+    name: &str,
+    middleware_source: &str,
+    deps: &str,
+    out_dir: &Path,
+) -> Result<PathBuf, String> {
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
     let crate_name = format!("{name}_{n}");
     let crate_dir = out_dir.join(&crate_name);
 
     fs::create_dir_all(crate_dir.join("src")).map_err(|e| format!("mkdir: {e}"))?;
-    fs::write(
-        crate_dir.join("Cargo.toml"),
+    let cargo_toml = if deps.trim().is_empty() {
         format!(
             "[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n"
-        ),
-    )
-    .map_err(|e| format!("写 Cargo.toml: {e}"))?;
+        )
+    } else {
+        format!(
+            "[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n{deps}\n"
+        )
+    };
+    fs::write(crate_dir.join("Cargo.toml"), cargo_toml).map_err(|e| format!("写 Cargo.toml: {e}"))?;
     fs::write(crate_dir.join("src/lib.rs"), middleware_source).map_err(|e| format!("写 lib.rs: {e}"))?;
 
-    // --offline：临时 crate 无依赖，避免更新索引
-    let out = match Command::new("cargo")
-        .args(["build", "--release", "--offline"])
-        .current_dir(&crate_dir)
-        .output()
-    {
+    // 无依赖 → --offline（避免更新索引）；有依赖 → 在线（用 cargo 缓存/拉取）
+    let mut cmd = Command::new("cargo");
+    cmd.args(["build", "--release"]).current_dir(&crate_dir);
+    if deps.trim().is_empty() {
+        cmd.arg("--offline");
+    }
+    let out = match cmd.output() {
         Ok(o) => o,
         Err(e) => {
             let _ = fs::remove_dir_all(&crate_dir); // 失败也清理临时目录（防泄漏）

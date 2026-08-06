@@ -392,6 +392,79 @@ fn struct_matrix() {
 ///
 /// 结论：通过 c_void 共享类型定义，**不能**承载 `dyn Trait`/闭包；`Box<dyn>` 同。可行域
 /// 是"布局稳定的具体类型"（本文件全矩阵）。这是 L7 极限的明确边界，不是缺陷。
+/// println! 可被**热编译**进中间件（std 输出 = 进程共享 stdout）。
+/// 证明：运行期编译的 .dylib 里可以带输出逻辑（观测/调试中间件），非纯静默。
+/// 运行 `cargo test --test opaque_types plugin_with_println -- --nocapture` 可见打印。
+#[test]
+fn plugin_with_println_hot_compiled() {
+    let src = r#"
+#[repr(C)]
+pub struct Msg { pub val: i64 }
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    let m = unsafe { &mut *(req as *mut Msg) };
+    m.val += 1;
+    println!("[热编译中间件 println] 当前 val = {}", m.val);   // ← println! 在运行期编译的 .dylib 内
+    0
+}
+"#;
+    let so = proc_mw::compile::build_plugin_cached("types_println", src, &std::env::temp_dir()).unwrap();
+    let p = proc_mw::runtime::PluginOpaque::load(so.to_str().unwrap()).unwrap();
+    #[repr(C)]
+    struct Msg {
+        val: i64,
+    }
+    let mut m = Msg { val: 41 };
+    let chain = OpaqueChain::new(vec![p.to_node()]);
+    chain.exec(|m| m.val, &mut m).unwrap();
+    assert_eq!(m.val, 42, "println 中间件照常变换消息");
+}
+
+/// 外部 crate 依赖：运行期编译的中间件可用 regex（编译管线 deps 支持，非 --offline）。
+/// 补齐"任意 Rust 代码"的外部 crate 域（evcxr `:dep` 对应物）。regex 已在 cargo 缓存，免网络。
+#[test]
+fn plugin_with_external_crate_regex() {
+    let src = r#"
+#[repr(C)]
+pub struct Msg { pub text: [u8; 64], pub len: usize, pub matched: u8 }
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    let m = unsafe { &mut *(req as *mut Msg) };
+    let s = String::from_utf8_lossy(&m.text[..m.len]);
+    let re = regex::Regex::new(r"^[a-z]+-[0-9]+$").unwrap();   // 外部 crate：regex
+    m.matched = if re.is_match(&s) { 1 } else { 0 };
+    0
+}
+"#;
+    let so = proc_mw::compile::build_plugin_with_deps(
+        "types_regex",
+        src,
+        "regex = \"1.13\"",
+        &std::env::temp_dir(),
+    )
+    .expect("运行期编译带外部依赖的中间件（regex）");
+    let p = proc_mw::runtime::PluginOpaque::load(so.to_str().unwrap()).unwrap();
+    #[repr(C)]
+    struct Msg {
+        text: [u8; 64],
+        len: usize,
+        matched: u8,
+    }
+    let mk = |s: &str| {
+        let mut text = [0u8; 64];
+        let b = s.as_bytes();
+        text[..b.len()].copy_from_slice(b);
+        Msg { text, len: b.len(), matched: 0 }
+    };
+    let chain = OpaqueChain::new(vec![p.to_node()]);
+    let mut m1 = mk("order-123");
+    chain.exec(|_| {}, &mut m1).unwrap();
+    assert_eq!(m1.matched, 1, "regex 应匹配 order-123");
+    let mut m2 = mk("no-match");
+    chain.exec(|_| {}, &mut m2).unwrap();
+    assert_eq!(m2.matched, 0, "regex 不应匹配 no-match");
+}
+
 /// 布局漂移检测：插件声明的共享类型与宿主期望布局不一致 → **加载期硬失败**
 /// （D7：防共享类型漂移导致运行期 UB；指纹 = size<<32|align）。
 /// 局限：同 size/align 的字段重排无法被此指纹捕获（列 limits.md），是显式边界。
