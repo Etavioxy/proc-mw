@@ -273,6 +273,56 @@ fn opaque_exec_catch_recovers_host_middleware_panic() {
     assert_eq!(chain2.exec_catch(|o| o.qty, &mut o2).unwrap(), 9);
 }
 
+// ===== async 链语义原语：exec_retry + exec_catch（对齐 sync/async_mw）=====
+
+/// flaky async 节点：前 N 次失败（返回码 2）
+struct AsyncFlaky {
+    fail_left: Arc<AtomicUsize>,
+}
+impl OpaqueAsyncMw for AsyncFlaky {
+    fn call<'a>(&'a self, req: *mut std::ffi::c_void) -> Pin<Box<dyn Future<Output = i32> + Send + 'a>> {
+        let addr = req as usize;
+        Box::pin(async move {
+            if self.fail_left.load(Ordering::SeqCst) > 0 {
+                self.fail_left.fetch_sub(1, Ordering::SeqCst);
+                2
+            } else {
+                let o = unsafe { &mut *(addr as *mut Order) };
+                o.hops += 1;
+                OPAQUE_CONTINUE
+            }
+        })
+    }
+}
+
+/// async 节点 panic
+struct AsyncPanic;
+impl OpaqueAsyncMw for AsyncPanic {
+    fn call<'a>(&'a self, _req: *mut std::ffi::c_void) -> Pin<Box<dyn Future<Output = i32> + Send + 'a>> {
+        Box::pin(async move {
+            panic!("async 中间件 panic");
+            OPAQUE_CONTINUE
+        })
+    }
+}
+
+#[test]
+fn async_opaque_exec_retry_and_catch() {
+    // retry：flaky(2) + retry 5 → 成功（克隆重放）
+    let chain = OpaqueAsyncChain::new(vec![OpaqueAsyncNode::Async(Arc::new(AsyncFlaky {
+        fail_left: Arc::new(AtomicUsize::new(2)),
+    }))]);
+    let mut o = order(1, 10);
+    let r = futures::executor::block_on(chain.exec_retry(|o| o.qty, &mut o, 5)).unwrap();
+    assert_eq!(r, 10, "async 重试后成功");
+    assert_eq!(o.hops, 1, "克隆重放：只有成功尝试变换");
+    // catch：async 中间件 panic 被兜住
+    let chain2 = OpaqueAsyncChain::new(vec![OpaqueAsyncNode::Async(Arc::new(AsyncPanic))]);
+    let mut o2 = order(1, 10);
+    let r2 = futures::executor::block_on(chain2.exec_catch(|o| o.qty, &mut o2));
+    assert_eq!(r2, Err(OPAQUE_REJECT), "async panic 被兜住（不崩溃）");
+}
+
 // ===== 跨切 deadline（HasDeadline trait 复用机制，免每场景手写）=====
 
 struct DeadlineReq {

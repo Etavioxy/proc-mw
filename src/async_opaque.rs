@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use crate::opaque::{OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE};
+use crate::opaque::{OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
 
 /// 异步超时错误：链失败（返回码）或超时（挂起 future 被取消）
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,6 +145,42 @@ impl OpaqueAsyncChain {
             }
         }
         Ok(out)
+    }
+
+    /// 异步重试（对齐 sync `exec_retry` / `async_mw::exec_retry`）：链失败（返回码）
+    /// 重试至多 `n` 次，每次从 `req` 原始状态克隆重放（非幂等变换不累积）。
+    pub async fn exec_retry<R: Send + Clone, O>(
+        &self,
+        core: impl Fn(&mut R) -> O + Send + Sync,
+        req: &mut R,
+        n: u32,
+    ) -> Result<O, i32> {
+        let mut last_err = 0i32;
+        for _ in 0..n {
+            let mut attempt = req.clone();
+            match self.exec(&core, &mut attempt).await {
+                Ok(v) => {
+                    *req = attempt;
+                    return Ok(v);
+                }
+                Err(e) => last_err = e,
+            }
+        }
+        Err(last_err)
+    }
+
+    /// 异步 panic 兜底（对齐 `async_mw::exec_catch`）：宿主侧 async 中间件 panic
+    /// 被 `catch_unwind` 兜住（返回码 2，不崩溃）。插件 extern C panic = abort（L3 边界）。
+    pub async fn exec_catch<R: Send, O>(
+        &self,
+        core: impl Fn(&mut R) -> O + Send + Sync,
+        req: &mut R,
+    ) -> Result<O, i32> {
+        use futures::FutureExt;
+        std::panic::AssertUnwindSafe(self.exec(core, req))
+            .catch_unwind()
+            .await
+            .unwrap_or(Err(OPAQUE_REJECT))
     }
 
     /// 异步超时执行：`select` 竞速 `exec` 与计时器——超时则**取消挂起的执行**
