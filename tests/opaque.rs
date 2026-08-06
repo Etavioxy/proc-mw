@@ -554,6 +554,25 @@ fn opaque_exec_with_trace_crosscutting() {
     assert_eq!(r.trace, 42, "trace 被跨切注入");
 }
 
+// ===== opaque exec_or（对齐 Ctx 链：拒绝时降级 fallback）=====
+
+#[test]
+fn opaque_exec_or_fallback_on_rejection() {
+    let chain = OpaqueChain::new(vec![node(reject_big)]); // qty>100 拒绝
+    let mut o = order(1, 200); // 大单 → 拒绝 → fallback
+    let r = chain.exec_or(|o| o.qty, &mut o, |o| {
+        o.qty = 0;
+        o.qty
+    });
+    assert_eq!(r, 0, "拒绝时降级 fallback 生效");
+    let mut o2 = order(2, 50); // 小单 → 正常
+    let r2 = chain.exec_or(|o| o.qty, &mut o2, |o| {
+        o.qty = 0;
+        o.qty
+    });
+    assert_eq!(r2, 50, "正常请求不经 fallback");
+}
+
 // ===== opaque exec_parallel（对齐 Ctx 链：多请求并行经链）=====
 
 #[test]

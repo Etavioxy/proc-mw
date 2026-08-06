@@ -172,6 +172,20 @@ impl OpaqueChain {
         Ok(out)
     }
 
+    /// 降级执行（对齐 `chain::exec_or`）：链拒绝（返回码）时走 fallback（恢复/降级）。
+    /// 补上 opaque 链语义原语的最后一块（exec/retry/catch/parallel/or 全对齐 Ctx 链）。
+    pub fn exec_or<R, O>(
+        &self,
+        core: impl Fn(&mut R) -> O,
+        req: &mut R,
+        fallback: impl Fn(&mut R) -> O,
+    ) -> O {
+        match self.exec(core, req) {
+            Ok(v) => v,
+            Err(_) => fallback(req),
+        }
+    }
+
     /// 并行执行（对齐 `chain::exec_parallel`）：多个请求并行经链（每请求一线程）。
     /// 读路径无锁（RCU 快照），共享链并行安全。
     pub fn exec_parallel<R: Send, O: Send>(
