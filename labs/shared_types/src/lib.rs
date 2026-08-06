@@ -46,7 +46,9 @@ pub struct ServiceReq {
     pub id: u64,
     pub path: String,
     pub deadline_ms: u64, // 超时截止（毫秒时间戳；u64::MAX = 无限制）
+    pub trace_id: u64,    // 追踪：0 = 未注入
 }
+
 
 /// 微服务场景（micro story）共享请求：非 repr(C)，直接共享
 #[derive(Debug, Clone)]

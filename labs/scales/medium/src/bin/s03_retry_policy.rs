@@ -126,7 +126,7 @@ impl Service<ServiceReq> for FlakySvc {
 }
 
 fn mk(id: u64) -> ServiceReq {
-    ServiceReq { id, path: format!("/api/{id}"), deadline_ms: u64::MAX }
+    ServiceReq { id, path: format!("/api/{id}"), deadline_ms: u64::MAX, trace_id: 0 }
 }
 
 fn main() {

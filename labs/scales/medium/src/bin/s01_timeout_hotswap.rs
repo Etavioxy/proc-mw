@@ -102,7 +102,7 @@ fn main() {
     println!("[1] MwService(tower) 就绪：OpaqueMetrics + 超时策略 v1（直接共享 ServiceReq）");
 
     // v1：deadline 未过期 → ok；过期 → Chain(超时)
-    let mk = |id: u64, deadline: u64| ServiceReq { id, path: format!("/api/{id}"), deadline_ms: deadline };
+    let mk = |id: u64, deadline: u64| ServiceReq { id, path: format!("/api/{id}"), deadline_ms: deadline, trace_id: 0 };
     let call = |svc: &mut MwService<EchoSvc>, req: ServiceReq| -> Result<String, MwSvcError> {
         let waker = futures::task::noop_waker();
         let mut cx = Context::from_waker(&waker);

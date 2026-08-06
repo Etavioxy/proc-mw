@@ -126,7 +126,7 @@ fn main() {
     println!("[1] ConcurrencyMwService(tower) 就绪：OpaqueMetrics + 并发限流(1)");
 
     // 并发 2 个调用：慢内层占住槽位 → 第 2 个被拒（oneshot + 共享限流器，真并发）
-    let mk = |id: u64| ServiceReq { id, path: format!("/api/{id}"), deadline_ms: u64::MAX };
+    let mk = |id: u64| ServiceReq { id, path: format!("/api/{id}"), deadline_ms: u64::MAX, trace_id: 0 };
     let call_in_thread = |svc: ConcurrencyMwService<SlowSvc>, id: u64| {
         std::thread::spawn(move || futures::executor::block_on(tower::ServiceExt::oneshot(svc, mk(id))))
     };
