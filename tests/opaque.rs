@@ -525,6 +525,23 @@ fn concurrent_hot_swap_during_production() {
     assert_eq!(chain.read().unwrap().len(), 1);
 }
 
+// ===== D3 删（remove）：RCU 快照移除节点 =====
+
+#[test]
+fn opaque_chain_remove_node() {
+    let mut chain = OpaqueChain::new(vec![node(discount), node(free_shipping), node(refund)]);
+    assert_eq!(chain.len(), 3);
+    chain.remove(1); // 移除 free_shipping
+    assert_eq!(chain.len(), 2, "移除后链长 2");
+    let mut o = order(1, 10);
+    chain.exec(|o| o.qty, &mut o).unwrap();
+    assert_eq!(o.hops, 2, "discount + refund 两节点执行（free_shipping 已移除）");
+    assert_eq!(o.qty, 10, "discount(-1) + refund(+1) = 10");
+    // 移除越界无操作
+    chain.remove(5);
+    assert_eq!(chain.len(), 2);
+}
+
 // ===== D3 快照隔离：热替换后持旧快照的读者不撕裂 =====
 
 #[test]
