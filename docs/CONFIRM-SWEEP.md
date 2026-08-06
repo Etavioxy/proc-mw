@@ -18,7 +18,11 @@
 | D8 迁移工具链 | tests/toolchain.rs, docs/toolchain.md | 类型注入 + 布局校验入管线 | 🟡 | 外部依赖解析（与 D6 同边） |
 
 ## 已闭环（✅，证据充分）
-- **D3**：RCU 快照 + 热替换 + 跨线程并发，全部集成测试绿。
+- **D3**：RCU 快照 + 热替换 + 跨线程并发 + **快照隔离**（持旧快照读者不撕裂，e6241b4），
+  全部集成测试绿。
+- **统一性（D2/D6）**：`Ctx{input,output,trace_id}` 作为共享 repr(C) 类型走 OpaqueChain
+  （治理 + 运行期编译插件全通，cc77867）——**i32 Ctx 链 = OpaqueChain 的 R=Ctx 特化**，
+  消灭"两条并行链"。
 - **D5**：真实 .dylib 产物 + 反汇编与布局守卫逐字节吻合——动态链接不透明边界被测量并被接受。
 - **D6/D8（外部依赖）**：`build_plugin_with_deps`（3f5b54c）——regex 外部 crate 运行期编译实测
   （匹配/拒绝双向断言）；println! 热编译实测（`[热编译中间件 println] 当前 val = 42`）。
@@ -29,9 +33,16 @@
 ## 未闭环边（🟡，按优先级推）
 1. ~~**外部 crate 依赖（D6/D8）**~~ ✅ 已闭环（build_plugin_with_deps + regex 实测）。
 2. ~~**D4 no-op 隔离**~~ ✅ 已闭环（纯链机制 ~1.1ns/槽，线性）。
-3. **OpaqueBuiltin 形式化（D2）**——封闭内联槽位（对齐 Ctx 链的 Builtin enum），
-   当前用宿主 thin fn 顶替，未形式化。**下一个。**
-4. **布局指纹增强（D7）**——同 size/align 的字段重排不捕获；可扩展为字段偏移哈希。
+3. ~~**OpaqueBuiltin 形式化（D2）**~~ ✅ 已闭环（510a9ee）。
+4. ~~**布局指纹增强（D7）**~~ ✅ 已闭环（(offset,size,align) 三元组，b19ee2d）。
+
+## 下一轮待推边（新发现）
+- **async 任意类型链**：async_mw/async_generic 是 i32 或编译期泛型，**无 async 运行期加载
+  中间件**——任意类型 + 真实 await + 运行期编译三者未同时成立。大工程。
+- **任意类型沙箱（D7 信任模型）**：subprocess 沙箱（sandbox.rs/mw_exec）是 i32 stdin/stdout，
+  任意类型请求需编组（marshalling）——与零拷贝 c_void 共享内存模型冲突，需显式记录为边界。
+- **有状态插件热更**：热替换到新 .dylib 时插件内部状态归零（旧 .dylib 保活但新版本全新）——
+  设计原则"状态放宿主 Stateful 节点"，需实验记录。
 
 ## 推边判定（每推完一条，回到本表更新状态）
 > 循环：推边 → 全量回归 → 原子提交 → 更新本表 → 推下一条。
