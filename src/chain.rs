@@ -77,6 +77,27 @@ impl Chain {
         Err(last_err.unwrap_or(MwError::Halted))
     }
 
+    /// 并行原语（L5）：并发处理 N 个输入（线程扇出），聚合结果。
+    /// 链为 Send+Sync（RCU 快照）→ 无锁并发读；核心须 Sync（可跨线程共享）。
+    pub fn exec_parallel(
+        &self,
+        core: impl Fn(&mut Ctx) -> Result<i32, MwError> + Send + Sync,
+        inputs: Vec<i32>,
+    ) -> Result<Vec<i32>, MwError> {
+        std::thread::scope(|s| {
+            let core_ref = &core; // 引用共享（F: Sync → &F: Send），可移进各线程
+            let handles: Vec<_> = inputs
+                .into_iter()
+                .map(|input| s.spawn(move || self.exec(core_ref, input)))
+                .collect();
+            let mut results = Vec::with_capacity(handles.len());
+            for h in handles {
+                results.push(h.join().map_err(|_| MwError::Rejected("worker panicked"))??);
+            }
+            Ok(results)
+        })
+    }
+
     /// 写路径：复制快照 + 原子替换（RCU），Θ(len)，稀有操作
     pub fn add(&mut self, node: Node) {
         let mut v = (*self.nodes).clone();
