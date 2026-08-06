@@ -175,6 +175,17 @@ impl PluginOpaque {
         }
     }
 
+    /// 设置插件任意 `extern "C" fn(u64)` 符号——**热更状态迁移**的写入侧。
+    /// 例：插件导出 `proc_mw_state_set(v: u64)`，热更时宿主把旧 .dylib 状态写入新 .dylib，
+    /// 使有状态插件**跨热更延续状态**（近似 evcxr 跨 eval 状态保持）。
+    pub fn set_extra_symbol_u64(&self, name: &[u8], value: u64) -> Option<()> {
+        unsafe {
+            let f = get_sym::<unsafe extern "C" fn(u64)>(&*self._lib, name).ok()?;
+            f(value);
+            Some(())
+        }
+    }
+
     /// 加载 + 布局指纹校验（D7）：插件须导出 `proc_mw_layout_fingerprint() -> u64`
     /// 且与宿主期望一致（size<<32|align）。共享类型定义漂移 → 加载期硬失败，而非运行期 UB。
     pub fn load_with_layout(path: &str, expected_layout: u64) -> Result<Self, String> {

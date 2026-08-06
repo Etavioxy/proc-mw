@@ -204,6 +204,54 @@ fn async_opaque_timeout_cancels_hung_middleware() {
     assert_eq!(r2, 10, "取消后链可复用");
 }
 
+// ===== 有状态插件热更·状态迁移（get/set 符号，跨热更延续状态）=====
+
+/// 把"状态归零"边界升级为"状态迁移"：插件导出 get/set 状态符号，热更时宿主
+/// 读 v1 状态 → 写 v2 → v2 从 v1 状态延续（近似 evcxr 跨 eval 状态保持）。
+#[test]
+fn stateful_plugin_state_migrates_across_hot_swap() {
+    let src_v1 = r#"
+use std::sync::atomic::{AtomicU64, Ordering};
+static COUNT: AtomicU64 = AtomicU64::new(0);
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(_req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    COUNT.fetch_add(1, Ordering::SeqCst);
+    0
+}
+#[no_mangle] pub extern "C" fn proc_mw_state_get() -> u64 { COUNT.load(Ordering::SeqCst) }
+#[no_mangle] pub extern "C" fn proc_mw_state_set(v: u64) { COUNT.store(v, Ordering::SeqCst) }
+"#;
+    let src_v2 = src_v1.replace("COUNT.fetch_add(1", "COUNT.fetch_add(2"); // 行为区别 → 新 .dylib
+    let so1 = proc_mw::compile::build_plugin_cached("migrate_v1", src_v1, &std::env::temp_dir()).unwrap();
+    let so2 = proc_mw::compile::build_plugin_cached("migrate_v2", &src_v2, &std::env::temp_dir()).unwrap();
+    let p1 = proc_mw::runtime::PluginOpaque::load(so1.to_str().unwrap()).unwrap();
+    let p2 = proc_mw::runtime::PluginOpaque::load(so2.to_str().unwrap()).unwrap();
+
+    // v1 跑 5 → 状态 5
+    let mut chain = OpaqueChain::new(vec![p1.to_node()]);
+    for _ in 0..5 {
+        let mut o = order(1, 10);
+        chain.exec(|o| o.qty, &mut o).unwrap();
+    }
+    assert_eq!(p1.get_extra_symbol_u64(b"proc_mw_state_get"), Some(5), "v1 状态累积到 5");
+
+    // 热换：迁移状态 v1→v2（get 读 v1，set 写 v2）
+    let state = p1.get_extra_symbol_u64(b"proc_mw_state_get").unwrap();
+    assert!(p2.set_extra_symbol_u64(b"proc_mw_state_set", state).is_some(), "状态写入 v2");
+    assert!(chain.set(0, p2.to_node()));
+
+    // v2 跑 3（每次 +2）→ 状态 = 5 + 6 = 11（延续 v1，非从 0）
+    for _ in 0..3 {
+        let mut o = order(1, 10);
+        chain.exec(|o| o.qty, &mut o).unwrap();
+    }
+    assert_eq!(
+        p2.get_extra_symbol_u64(b"proc_mw_state_get"),
+        Some(11),
+        "状态跨热更迁移（v1 的 5 + v2 的 2×3 = 11），非归零"
+    );
+}
+
 // ===== 任意类型链配置驱动（config.rs 补 i32 中心缺口）=====
 
 #[test]
