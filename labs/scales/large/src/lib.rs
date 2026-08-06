@@ -102,4 +102,12 @@ pub struct EntityEvent {
     pub kept: bool,                       // 实体保留标记（插件写入）
 }
 
+/// 沙箱消息（实验：字节沙箱 + 直接依赖宿主插件）——repr(C)/POD 可跨进程字节编组
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(C)]
+pub struct SandboxMsg {
+    pub a: u32,
+    pub b: u64,
+}
+
 
