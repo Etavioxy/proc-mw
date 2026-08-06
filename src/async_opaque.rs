@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use crate::opaque::{HasDeadline, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
+use crate::opaque::{HasDeadline, HasTrace, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
 
 /// 异步超时错误：链失败（返回码）或超时（挂起 future 被取消）
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,6 +145,18 @@ impl OpaqueAsyncChain {
             }
         }
         Ok(out)
+    }
+
+    /// 异步 trace 注入（对齐 sync `exec_with_trace`）：请求实现 `HasTrace` → 注入后执行。
+    /// 与 `exec_timeout_with_deadline` 对称（async 上下文跨切完整：deadline + trace）。
+    pub async fn exec_with_trace<R: Send + HasTrace, O>(
+        &self,
+        core: impl Fn(&mut R) -> O + Send + Sync,
+        req: &mut R,
+        trace: u64,
+    ) -> Result<O, i32> {
+        req.set_trace_id(trace);
+        self.exec(core, req).await
     }
 
     /// 异步重试（对齐 sync `exec_retry` / `async_mw::exec_retry`）：链失败（返回码）

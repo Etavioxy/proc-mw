@@ -492,6 +492,17 @@ fn async_opaque_exec_retry_timeout() {
     assert_eq!(o.hops, 1, "只有成功尝试变换（克隆重放）");
 }
 
+// ===== async 跨切 trace（exec_with_trace，与 deadline 对称）=====
+
+#[test]
+fn async_opaque_exec_with_trace() {
+    let chain = OpaqueAsyncChain::empty();
+    let mut r = TraceReq { trace: 0 };
+    let r_out = futures::executor::block_on(chain.exec_with_trace(|r| r.trace, &mut r, 7));
+    assert_eq!(r_out, Ok(7), "async trace 注入");
+    assert_eq!(r.trace, 7, "trace 写入请求");
+}
+
 // ===== 跨切 trace 注入（HasTrace trait + exec_with_trace，与 deadline 对称）=====
 
 #[derive(Clone)]
