@@ -4,9 +4,13 @@
 //!      exit 洋葱（逆序）/ 空链透明 / Send+Sync 并发 / 布局守卫 /
 //!      运行期编译插件 `PluginOpaque::to_node()` 全链路（任意 Rust 代码 + 共享 repr(C) 类型）。
 
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use proc_mw::async_opaque::{OpaqueAsyncChain, OpaqueAsyncMw, OpaqueAsyncNode};
 use proc_mw::opaque::{OpaqueChain, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
 use proc_mw::opaque_gov::{OpaqueMetrics, OpaqueRateLimiter};
 
@@ -214,6 +218,72 @@ fn opaque_builtin_closed_inline_slot() {
     assert!(c.set(0, OpaqueBuiltin::Continue.to_node()));
     let mut o = order(1, 10);
     assert_eq!(c.exec(|o| o.qty, &mut o).unwrap(), 9, "开关热更后放行");
+}
+
+// ===== 异步任意类型链（async × 任意类型 × 运行期编译同步插件）=====
+
+/// 异步有状态节点：真实 await（挂起/恢复）后变换请求
+struct AsyncHop {
+    runs: Arc<AtomicUsize>,
+}
+impl OpaqueAsyncMw for AsyncHop {
+    fn call<'a>(&'a self, req: *mut std::ffi::c_void) -> Pin<Box<dyn Future<Output = i32> + Send + 'a>> {
+        // `*mut c_void` 非 Send：捕获为 usize（Send）。安全性：&mut R 在 exec 全程存活，
+        // 地址在其生命周期内有效；future 同一时刻仅一个 poller（futures 保证）。
+        let addr = req as usize;
+        Box::pin(async move {
+            // 真实挂起点：第一次 poll 返回 Pending 并唤醒，第二次就绪（暂停/恢复）
+            let mut yielded = false;
+            std::future::poll_fn(move |cx| {
+                if yielded {
+                    std::task::Poll::Ready(())
+                } else {
+                    yielded = true;
+                    cx.waker().wake_by_ref();
+                    std::task::Poll::Pending
+                }
+            })
+            .await;
+            self.runs.fetch_add(1, Ordering::SeqCst);
+            let o = unsafe { &mut *(addr as *mut Order) };
+            o.hops += 1;
+            OPAQUE_CONTINUE
+        })
+    }
+}
+
+#[test]
+fn async_opaque_chain_sync_plugin_plus_async_mw() {
+    // 运行期编译同步插件（Thin）进异步链——任意类型 + 运行期编译 + async 三者同链
+    let src = r#"
+#[repr(C)]
+pub struct Order { pub id: u64, pub qty: i64, pub hops: u32 }   // 与宿主布局一致
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    let o = unsafe { &mut *(req as *mut Order) };
+    o.qty -= 1;
+    o.hops += 1;
+    0
+}
+"#;
+    let so = proc_mw::compile::build_plugin_cached("async_audit", src, &std::env::temp_dir()).unwrap();
+    let p = proc_mw::runtime::PluginOpaque::load(so.to_str().unwrap()).unwrap();
+    let runs = Arc::new(AtomicUsize::new(0));
+    let chain = OpaqueAsyncChain::new(vec![
+        OpaqueAsyncNode::Sync(p.to_node()),
+        OpaqueAsyncNode::Async(Arc::new(AsyncHop { runs: runs.clone() })),
+    ]);
+    let mut o = order(1, 10);
+    let r = futures::executor::block_on(chain.exec(|o| o.qty, &mut o)).unwrap();
+    assert_eq!(r, 9, "运行期编译插件在异步链中生效（qty 10→9）");
+    assert_eq!(o.hops, 2, "插件 hop + 异步节点 hop");
+    assert_eq!(runs.load(Ordering::SeqCst), 1, "异步节点真实执行（含 yield await）");
+    // 热替换异步链槽位
+    let mut chain2 = OpaqueAsyncChain::new(vec![OpaqueAsyncNode::Async(Arc::new(AsyncHop { runs: runs.clone() }))]);
+    assert!(chain2.set(0, OpaqueAsyncNode::Sync(p.to_node())));
+    let mut o2 = order(2, 10);
+    let r = futures::executor::block_on(chain2.exec(|o| o.qty, &mut o2)).unwrap();
+    assert_eq!(r, 9, "热替换后异步槽位换成同步插件仍生效");
 }
 
 // ===== 交叉确认：Ctx 链 = OpaqueChain 的 R=Ctx 特化（消灭"两条并行链"）=====

@@ -16,6 +16,7 @@
 
 pub mod async_generic;
 pub mod async_mw;
+pub mod async_opaque;
 pub mod chain;
 pub mod compile;
 pub mod config;
