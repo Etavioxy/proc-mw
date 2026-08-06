@@ -172,6 +172,26 @@ impl OpaqueChain {
         Ok(out)
     }
 
+    /// 并行执行（对齐 `chain::exec_parallel`）：多个请求并行经链（每请求一线程）。
+    /// 读路径无锁（RCU 快照），共享链并行安全。
+    pub fn exec_parallel<R: Send, O: Send>(
+        &self,
+        core: impl Fn(&mut R) -> O + Send + Sync,
+        reqs: Vec<R>,
+    ) -> Vec<Result<O, i32>> {
+        std::thread::scope(|s| {
+            let core_ref = &core;
+            let handles: Vec<_> = reqs
+                .into_iter()
+                .map(|mut req| s.spawn(move || self.exec(core_ref, &mut req)))
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap_or(Err(OPAQUE_REJECT)))
+                .collect()
+        })
+    }
+
     /// 跨切 deadline 执行：请求实现 `HasDeadline` → 过期即拒（返回码 2），
     /// 免每场景手写 deadline 检查节点（复用机制）。
     pub fn exec_with_deadline<R: HasDeadline + Send, O>(

@@ -554,6 +554,25 @@ fn opaque_exec_with_trace_crosscutting() {
     assert_eq!(r.trace, 42, "trace 被跨切注入");
 }
 
+// ===== opaque exec_parallel（对齐 Ctx 链：多请求并行经链）=====
+
+#[test]
+fn opaque_exec_parallel() {
+    let chain = OpaqueChain::new(vec![node(discount)]);
+    let reqs: Vec<Order> = (0..4).map(|i| order(i, 100)).collect();
+    let results = chain.exec_parallel(|o| o.qty, reqs);
+    assert_eq!(results.len(), 4);
+    assert!(results.iter().all(|r| *r == Ok(99)), "并行各执行 discount(-1)");
+    // 并行 + 热更并发安全（共享链，RCU 读路径无锁）
+    let mut chain2 = OpaqueChain::new(vec![node(discount)]);
+    let reqs2: Vec<Order> = (0..4).map(|i| order(i, 100)).collect();
+    let results2 = chain2.exec_parallel(|o| o.qty, reqs2);
+    assert!(results2.iter().all(|r| *r == Ok(99)));
+    chain2.set(0, node(refund));
+    let mut o = order(9, 100);
+    assert_eq!(chain2.exec(|o| o.qty, &mut o).unwrap(), 101, "并行后链可热更");
+}
+
 // ===== 跨切 deadline（HasDeadline trait 复用机制，免每场景手写）=====
 
 struct DeadlineReq {
