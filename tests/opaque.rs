@@ -312,6 +312,34 @@ pub struct Order { pub id: u64, pub qty: i64, pub hops: u32 }
     assert_eq!(registry.len(), 1);
 }
 
+// ===== 统一实验：泛型通道 Ctx 作为 opaque 链请求类型（运行期插件操作）=====
+
+#[test]
+fn opaque_chain_carries_generic_ctx_request() {
+    // 运行期编译插件操作 generic::Ctx<i32,i32>（插件依赖 proc-mw，用其类型）
+    let src = r#"
+use proc_mw::generic::Ctx;
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    let c = unsafe { &mut *(req as *mut Ctx<i32, i32>) };
+    c.input += 5;
+    0
+}
+"#;
+    let deps = format!(
+        "proc-mw = {{ path = \"{}\", features = [\"runtime\"] }}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let so = proc_mw::compile::build_plugin_with_deps("gen_ctx_plugin", src, &deps, &std::env::temp_dir())
+        .expect("编译插件（依赖 proc-mw，操作 generic::Ctx）");
+    let p = proc_mw::runtime::PluginOpaque::load(so.to_str().unwrap()).unwrap();
+    let chain = OpaqueChain::new(vec![p.to_node()]);
+    let mut ctx = proc_mw::generic::Ctx::<i32, i32>::new(1);
+    let r = chain.exec(|c| c.input, &mut ctx).unwrap();
+    assert_eq!(r, 6, "插件操作 generic::Ctx 字段（统一：泛型通道请求类型可进 opaque 链）");
+    assert_eq!(ctx.input, 6);
+}
+
 // ===== 链类型无关性：同一链实例处理多种请求类型（D2 类型无关）=====
 
 #[test]
