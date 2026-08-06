@@ -46,3 +46,19 @@ fn config_with_reject_short_circuits() {
     );
     assert_eq!(chain.exec(core, 5).unwrap(), 7);
 }
+
+#[test]
+fn config_supports_metrics_and_parameterized_rate_limit() {
+    // 参数化配置："rate-limit:1" → 每窗口 1 次
+    let chain = build_chain(&["metrics", "rate-limit:1", "add1"]).unwrap();
+    assert_eq!(chain.exec(core, 1).unwrap(), 3);
+    // 限流触发（窗口内第 2 次被拒）
+    assert_eq!(chain.exec(core, 2), Err(MwError::Rejected("rate limited")));
+}
+
+#[test]
+fn config_rejects_bad_parameter() {
+    // 参数缺失/非数字 → 明确报错
+    assert!(build_chain(&["rate-limit"]).is_err(), "缺参数应报错");
+    assert!(build_chain(&["rate-limit:abc"]).is_err(), "非数字应报错");
+}
