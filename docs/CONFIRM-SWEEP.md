@@ -36,6 +36,12 @@
 3. ~~**OpaqueBuiltin 形式化（D2）**~~ ✅ 已闭环（510a9ee）。
 4. ~~**布局指纹增强（D7）**~~ ✅ 已闭环（(offset,size,align) 三元组，b19ee2d）。
 
+## D8 迁移工具链（最后做的维度）落地
+- ✅ `migrate::adopt`（61410f6）：通用采纳点——已有 handler 经链包装，加性可回滚。
+  实验：6 handler 批量采纳 + 原 handler 未变（回滚）。此前 D8 仅手写包装，无正式采纳点。
+- 跨切上下文（088e680）：`HasDeadline` trait + `exec_with_deadline`——免每场景手写
+  deadline 检查（复用机制）。
+
 ## 待推边（最终裁决）
 - ~~**async 任意类型链**~~ ✅ 已闭环（baf7c7a + 04d7796 + 6e9633d）：OpaqueAsyncChain +
   真实 await 进 flume 生产路径（send_async）；**exec_timeout 取消挂死中间件**
