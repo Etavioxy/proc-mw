@@ -194,6 +194,38 @@ pub fn toolchain_report() -> ToolchainReport {
     }
 }
 
+/// 递归目录体积（target-dir 清理用）
+fn dir_size(path: &Path) -> u64 {
+    fs::read_dir(path)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| {
+            let p = e.path();
+            if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                dir_size(&p)
+            } else {
+                e.metadata().map(|m| m.len()).unwrap_or(0)
+            }
+        })
+        .sum()
+}
+
+/// 共享 target-dir 按字节上限清理（资源管理）：实测共享 target 可累积 247MB
+/// （bevy_ecs 等重依赖编译产物）；超限整删（丢缓存，下次重建——粗粒度缓存逐出）。
+/// 返回清理次数。
+pub fn plugin_target_cleanup(out_dir: &Path, max_bytes: u64) -> usize {
+    let dir = out_dir.join("proc_mw_plugin_target");
+    if !dir.exists() {
+        return 0;
+    }
+    if dir_size(&dir) > max_bytes {
+        fs::remove_dir_all(&dir).ok();
+        return 1;
+    }
+    0
+}
+
 /// 编译管线统计（工具链自身可观测性）：总请求 / 缓存命中 / 命中率
 pub fn pipeline_stats() -> (u64, u64) {
     (

@@ -38,6 +38,23 @@ fn concurrent_compilation_safe() {
 }
 
 #[test]
+fn plugin_target_cleanup_caps_shared_target() {
+    use proc_mw::compile::plugin_target_cleanup;
+    let out_dir = std::env::temp_dir().join(format!("proc_mw_ptc_{}", std::process::id()));
+    // 构建一个插件（产生共享 target）
+    build_plugin_cached("ptc_probe", &mw_src(1), &out_dir).unwrap();
+    let target = out_dir.join("proc_mw_plugin_target");
+    assert!(target.exists(), "共享 target 存在");
+    // 低上限 → 清理（整删，返回 1）
+    let cleaned = plugin_target_cleanup(&out_dir, 0);
+    assert_eq!(cleaned, 1, "超限清理");
+    assert!(!target.exists(), "超限后 target 被删");
+    // 后续可重建（新源码 → 缓存 miss → 重新构建）
+    build_plugin_cached("ptc_probe2", &mw_src(2), &out_dir).unwrap();
+    assert!(out_dir.join("proc_mw_plugin_target").exists(), "清理后可重建");
+}
+
+#[test]
 fn pipeline_stats_tracks_builds_and_hits() {
     use proc_mw::compile::pipeline_stats;
     let out_dir = std::env::temp_dir().join(format!("proc_mw_stats_{}", std::process::id()));
