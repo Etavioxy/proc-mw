@@ -9,12 +9,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 /// 全局构建锁：串行化插件 cargo 构建——共享 target-dir（依赖复用）安全，
 /// 并发构建排队不冲突（不同插件可并行编译的收益 < 共享依赖的收益）。
 static BUILD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// 编译管线自身可观测性（D8 工具链域）：构建次数 / 缓存命中
+static TOTAL_BUILDS: AtomicU64 = AtomicU64::new(0);
+static CACHE_HITS: AtomicU64 = AtomicU64::new(0);
 
 /// 编译中间件源码为 cdylib，返回 .so/.dylib 路径。
 /// `middleware_source` 须导出 `proc_mw_abi_version()` 与 `mw_enter`（+可选 `mw_exit`）。
@@ -191,6 +194,14 @@ pub fn toolchain_report() -> ToolchainReport {
     }
 }
 
+/// 编译管线统计（工具链自身可观测性）：总请求 / 缓存命中 / 命中率
+pub fn pipeline_stats() -> (u64, u64) {
+    (
+        TOTAL_BUILDS.load(Ordering::SeqCst),
+        CACHE_HITS.load(Ordering::SeqCst),
+    )
+}
+
 /// 源码简单哈希（FNV-1a 64 位）——编译缓存的键
 fn fnv1a64(data: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
@@ -223,8 +234,11 @@ pub fn build_plugin_cached(
 
     if cache_path.exists() {
         // 缓存命中：复用，跳过编译
+        CACHE_HITS.fetch_add(1, Ordering::SeqCst);
+        TOTAL_BUILDS.fetch_add(1, Ordering::SeqCst);
         return Ok(cache_path);
     }
+    TOTAL_BUILDS.fetch_add(1, Ordering::SeqCst);
 
     // 缓存未命中：编译并把产物复制到缓存位置
     let so = build_plugin(name, middleware_source, out_dir)?;

@@ -38,6 +38,21 @@ fn concurrent_compilation_safe() {
 }
 
 #[test]
+fn pipeline_stats_tracks_builds_and_hits() {
+    use proc_mw::compile::pipeline_stats;
+    let out_dir = std::env::temp_dir().join(format!("proc_mw_stats_{}", std::process::id()));
+    // 首次编译 → miss（总请求增、命中不变）
+    build_plugin_cached("stats_probe", &mw_src(1), &out_dir).unwrap();
+    let (total1, hits1) = pipeline_stats();
+    assert!(total1 >= 1);
+    // 同源码再编译 → 命中（命中增）
+    build_plugin_cached("stats_probe", &mw_src(1), &out_dir).unwrap();
+    let (total2, hits2) = pipeline_stats();
+    assert!(hits2 > hits1, "同源码第二次命中缓存");
+    assert!(total2 > total1);
+}
+
+#[test]
 fn concurrent_same_source_single_cache_entry() {
     // 多线程编译相同源码 → 缓存只应有 1 条（原子写防重复）
     let out_dir = std::env::temp_dir().join(format!("proc_mw_cc_same_{}", std::process::id()));
