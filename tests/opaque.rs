@@ -171,6 +171,26 @@ fn send_sync_concurrent_chains() {
     }
 }
 
+// ===== D3 快照隔离：热替换后持旧快照的读者不撕裂 =====
+
+#[test]
+fn hot_swap_snapshot_isolation() {
+    let mut chain = OpaqueChain::new(vec![node(discount)]); // v1：qty-1
+    // 读者 A 拿 v1 快照（Arc clone，读路径无锁）
+    let snap_v1 = chain.clone();
+    // 写者热替换 → v2（refund：qty+1）
+    assert!(chain.set(0, node(refund)));
+    let snap_v2 = chain.clone();
+    // v1 快照仍是 discount，v2 快照是 refund——读者行为按各自快照，不撕裂
+    let mut o1 = order(1, 10);
+    assert_eq!(snap_v1.exec(|o| o.qty, &mut o1).unwrap(), 9, "v1 快照仍是 -1");
+    let mut o2 = order(1, 10);
+    assert_eq!(snap_v2.exec(|o| o.qty, &mut o2).unwrap(), 11, "v2 快照是 +1");
+    // 原链也已是 v2（新请求走新快照）
+    let mut o3 = order(1, 10);
+    assert_eq!(chain.exec(|o| o.qty, &mut o3).unwrap(), 11);
+}
+
 // ===== D2 封闭内联槽位：OpaqueBuiltin（开关/位标记）=====
 
 #[test]
