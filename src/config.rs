@@ -13,6 +13,7 @@ use crate::async_opaque::{OpaqueAsyncChain, OpaqueAsyncNode};
 use crate::opaque::{OpaqueBuiltin, OpaqueChain, OpaqueNode};
 use crate::opaque_gov::{OpaqueMetrics, OpaqueRateLimiter};
 use crate::rate_limit::RateLimiter;
+#[cfg(feature = "runtime")]
 use crate::runtime::PluginRegistry;
 
 /// 从中间件 spec 构建链。每个 spec 项 = 中间件名（可带参数）。
@@ -74,6 +75,7 @@ pub fn build_opaque_async_chain(spec: &[&str]) -> Result<OpaqueAsyncChain, Strin
 }
 
 /// 带注册表的配置构建：`@name` 引用已注册插件，其余同 `build_opaque_chain`
+#[cfg(feature = "runtime")]
 pub fn build_opaque_chain_with_registry(
     spec: &[&str],
     registry: &PluginRegistry,
