@@ -16,11 +16,11 @@
 ## 关键发现
 
 1. **rustc_driver 快**：0.04s/次 进程内编译，无子进程 spawn 开销——即使无缓存也比 cargo 冷启动快。
-2. **产物大小差异 25×**：rustc_driver 默认 debug 未优化；**公平对比需传 `-C opt-level=3` + strip**（未在本次测量中体现）。
+2. **产物大小（公平对比）**：cargo=16832B、rustc_driver(debug)=420KB、**rustc_driver(opt3)=16816B**——opt-level=3 + strip 后与 cargo **几乎完全一致**。25× 差异纯是 opt 级别，非管线本身。**rustc_driver 生产可用。**
 3. **取舍**：
-   - 需要**无 cargo 依赖**（嵌入式/离线）→ rustc_driver
-   - 需要**产物最小/缓存复用** → cargo 管线（build_plugin_cached）
-   - 两者可共存：rustc_driver 为快速无依赖路径，cargo 为优化产物路径
+   - 需要**无 cargo 依赖**（嵌入式/离线）→ rustc_driver（opt3 + strip 产物同 cargo）
+   - 需要**缓存复用**（重复编译同源码）→ cargo 管线（build_plugin_cached 命中 0.00s）
+   - 两者可共存：rustc_driver 为快速无依赖路径，cargo 为缓存复用路径
 
 ## 复现
 
