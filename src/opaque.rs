@@ -1,9 +1,9 @@
 //! D6 类型无关中间件链 —— **核心目的的落地**：运行期编译任意 Rust 代码，
 //! 操作**任意共享类型**，粘合进中间层。
 //!
-//! `dispatch::Chain`（`Ctx { input: i32 }`）是控制面治理链（metrics/限流/追踪）。
-//! 本模块是**数据面**：请求类型由宿主与插件**各自定义同一 `#[repr(C)]` 布局**的
-//! 共享类型决定，ABI 用 `*mut c_void`（类型擦除指针）。插件内部对任意类型调用方法
+//! `dispatch::Chain`（`Ctx { input: i32 }`）是控制面治理链。本模块是**类型无关**的
+//! 中间层：请求类型由宿主与插件**各自定义同一 `#[repr(C)]` 布局**的共享类型决定，
+//! ABI 用 `*mut c_void`（类型擦除指针）。插件内部对任意类型调用方法
 //! （`String::push` / `Vec::sort` / struct 字段），运行期编译 → dlopen → RCU 快照热替换。
 //!
 //! ```text
@@ -11,6 +11,10 @@
 //! repr(C) struct Msg {..}  ⇄  repr(C) struct Msg {..}   ← 共享类型定义（布局一致）
 //!   &mut Msg ──c_void──▶  mw_enter(req: *mut c_void, resp: *mut c_void)
 //! ```
+//!
+//! **节点槽位（D2 状态承载 → 独立可选）**：
+//! - `Thin`：无状态（运行期编译插件落槽 / 宿主薄变换），extern "C" fn 对 + 保活句柄
+//! - `Stateful`：有状态治理（metrics/限流/熔断），`Arc<dyn OpaqueMw>`——不再绑 i32 Ctx
 //!
 //! 语义对齐 `dispatch::chain_exec`：enter 正序（可短路/报错，报错不跑 exit）→
 //! core → exit 逆序（洋葱）。契约（D7）：`extern "C"` + ABI 版本符号 + enter 返回码
@@ -20,21 +24,31 @@
 use std::any::Any;
 use std::sync::Arc;
 
-/// 类型无关中间件节点（D2 槽位：Extern——thin fn 指针 + 保活句柄，无 vtable）
-#[derive(Clone)]
-pub struct OpaqueNode {
-    /// 进入变换：`req` 指向共享类型实例，`resp` 预留输出缓冲（当前契约为 null）
-    pub enter: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32,
-    /// 退出钩子（洋葱逆序，可改写请求）
-    pub exit: Option<unsafe extern "C" fn(*mut std::ffi::c_void)>,
-    /// 保活句柄（Arc<Library> 类型擦除）——热替换永不 unload
-    pub keepalive: Arc<dyn Any + Send + Sync>,
-}
-
 /// enter 返回码契约（D7）：0 继续 / 1 短路 / 2 拒绝
 pub const OPAQUE_CONTINUE: i32 = 0;
 pub const OPAQUE_BREAK: i32 = 1;
 pub const OPAQUE_REJECT: i32 = 2;
+
+/// 有状态类型无关中间件（治理：metrics/限流/熔断）。D2：状态承载 → dyn 槽位。
+pub trait OpaqueMw: Send + Sync {
+    /// 进入：`req` 指向共享类型实例。返回 0 继续 / 1 短路 / 2 拒绝。
+    fn enter(&self, req: *mut std::ffi::c_void) -> i32;
+    /// 退出（洋葱逆序，仅成功路径调用；错误短路不达）
+    fn exit(&self, _req: *mut std::ffi::c_void) {}
+}
+
+/// 类型无关中间件节点（D2 槽位：Thin fn-ptr 或 Stateful dyn）
+#[derive(Clone)]
+pub enum OpaqueNode {
+    /// 无状态：extern "C" 变换对 + 保活句柄（运行期编译插件 / 宿主薄变换）
+    Thin {
+        enter: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32,
+        exit: Option<unsafe extern "C" fn(*mut std::ffi::c_void)>,
+        keepalive: Arc<dyn Any + Send + Sync>,
+    },
+    /// 有状态：治理中间件（metrics/限流），不绑 i32 Ctx
+    Stateful(Arc<dyn OpaqueMw>),
+}
 
 /// 类型无关中间件链（RCU 快照：读路径无锁、无分配；add/remove/set = 替换快照）
 #[derive(Clone)]
@@ -91,12 +105,15 @@ impl OpaqueChain {
     /// 数据面执行：`req` 经全链变换后再跑 `core`。
     /// `R` = 共享类型（`#[repr(C)]`，宿主与插件各自定义同一布局），`O` = 业务返回。
     /// 语义对齐 `dispatch::chain_exec`：enter 短路/报错即终止（不跑 core / exit）；
-    /// 正常路径 = enter 正序 → core → exit 逆序洋葱。
+    /// 正常路径 = enter 正序 → core → exit 逆序洋葱（stateful 同样收到 exit）。
     pub fn exec<R, O>(&self, core: impl Fn(&mut R) -> O, req: &mut R) -> Result<O, i32> {
         let nodes = self.nodes.as_ref();
         let ptr = req as *mut R as *mut std::ffi::c_void;
         for n in nodes.iter() {
-            let code = unsafe { (n.enter)(ptr, std::ptr::null_mut()) };
+            let code = match n {
+                OpaqueNode::Thin { enter, .. } => unsafe { (enter)(ptr, std::ptr::null_mut()) },
+                OpaqueNode::Stateful(mw) => mw.enter(ptr),
+            };
             match code {
                 OPAQUE_CONTINUE => {}
                 OPAQUE_BREAK => return Err(OPAQUE_BREAK), // 短路：终止
@@ -105,8 +122,10 @@ impl OpaqueChain {
         }
         let out = core(req);
         for n in nodes.iter().rev() {
-            if let Some(exit) = n.exit {
-                unsafe { exit(ptr) };
+            match n {
+                OpaqueNode::Thin { exit: Some(f), .. } => unsafe { f(ptr) },
+                OpaqueNode::Stateful(mw) => mw.exit(ptr),
+                _ => {}
             }
         }
         Ok(out)
@@ -139,8 +158,10 @@ mod tests {
         OPAQUE_REJECT
     }
 
-    fn node(f: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32) -> OpaqueNode {
-        OpaqueNode {
+    fn thin(
+        f: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32,
+    ) -> OpaqueNode {
+        OpaqueNode::Thin {
             enter: f,
             exit: None,
             keepalive: Arc::new(()),
@@ -150,17 +171,17 @@ mod tests {
     #[test]
     fn opaque_chain_transform_and_hotswap() {
         // 任意类型共享 struct 经链变换（enter 正序）
-        let mut chain = OpaqueChain::new(vec![node(add1), node(add10)]);
+        let mut chain = OpaqueChain::new(vec![thin(add1), thin(add10)]);
         let mut m = Msg { val: 0, hops: 0 };
         let r = chain.exec(|m| m.val, &mut m).unwrap();
         assert_eq!(r, 11);
         assert_eq!(m.hops, 2, "两个节点各 hop 一次");
         // RCU 热替换：槽位 0 add1 → add10（行为变化，快照替换）
-        assert!(chain.set(0, node(add10)));
+        assert!(chain.set(0, thin(add10)));
         let mut m2 = Msg { val: 0, hops: 0 };
         assert_eq!(chain.exec(|m| m.val, &mut m2).unwrap(), 20);
         // 拒绝码传播：拒绝后不再执行后续节点（D7 错误经返回码）
-        let chain2 = OpaqueChain::new(vec![node(reject), node(add1)]);
+        let chain2 = OpaqueChain::new(vec![thin(reject), thin(add1)]);
         let mut m3 = Msg { val: 0, hops: 0 };
         assert_eq!(chain2.exec(|m| m.val, &mut m3), Err(OPAQUE_REJECT));
         assert_eq!(m3.hops, 0, "拒绝后后续节点不执行");

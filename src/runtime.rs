@@ -142,10 +142,10 @@ impl PluginOpaque {
         unsafe { (self.enter)(req, resp) }
     }
 
-    /// 产出类型无关链节点（`opaque::OpaqueNode`）——把运行期编译的**任意类型**中间件
-    /// 粘合进中间层（核心目的落地；区别于 `Plugin::to_node` 的 i32 控制面节点）。
+    /// 产出类型无关链节点（`opaque::OpaqueNode::Thin`）——把运行期编译的**任意类型**
+    /// 中间件粘合进中间层（核心目的落地；区别于 `Plugin::to_node` 的 i32 控制面节点）。
     pub fn to_node(&self) -> crate::opaque::OpaqueNode {
-        crate::opaque::OpaqueNode {
+        crate::opaque::OpaqueNode::Thin {
             enter: self.enter,
             exit: self.exit,
             keepalive: Arc::clone(&self._lib) as Arc<dyn Any + Send + Sync>,

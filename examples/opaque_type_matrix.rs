@@ -151,7 +151,7 @@ struct ResultRow {
 }
 
 fn bench_case<R>(name: &'static str, make: fn() -> R, enter: Enter, iters: u64) -> ResultRow {
-    let n = || OpaqueNode {
+    let n = || OpaqueNode::Thin {
         enter,
         exit: None,
         keepalive: Arc::new(()),

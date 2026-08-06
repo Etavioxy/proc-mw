@@ -11,7 +11,7 @@ use std::sync::Arc;
 use proc_mw::opaque::{OpaqueChain, OpaqueNode, OPAQUE_CONTINUE};
 
 fn node(f: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32) -> OpaqueNode {
-    OpaqueNode {
+    OpaqueNode::Thin {
         enter: f,
         exit: None,
         keepalive: Arc::new(()),
@@ -364,7 +364,9 @@ fn struct_matrix() {
 /// 是"布局稳定的具体类型"（本文件全矩阵）。这是 L7 极限的明确边界，不是缺陷。
 #[test]
 fn dyn_trait_boundary_documented() {
-    // 编译期哨兵：本测试无运行断言，存在即记录"不可行域"（见上方 doc 证据）。
-    // 若未来引入 trait-object 跨 .so，此测试应替换为实现，先列在 limits.md。
-    assert!(true);
+    // 硬证据：`&dyn Trait` 是 16 字节胖指针（data + vtable），装不进 8 字节 c_void。
+    // 即共享类型定义 ABI 物理上无法承载 trait-object/闭包。
+    assert_eq!(std::mem::size_of::<&dyn std::fmt::Debug>(), 16);
+    assert_eq!(std::mem::size_of::<*mut std::ffi::c_void>(), 8);
+    assert_eq!(std::mem::size_of::<&dyn std::fmt::Debug>() / std::mem::size_of::<*mut std::ffi::c_void>(), 2);
 }

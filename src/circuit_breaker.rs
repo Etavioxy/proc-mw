@@ -64,4 +64,39 @@ impl CircuitBreaker {
             }
         }
     }
+
+    /// 类型无关熔断：包装任意类型链（`OpaqueChain`），失败计数 / 冷却 / 半开。
+    /// 治理层从 i32 Ctx 迁移到任意共享类型——与 `call` 语义一致，请求类型任意。
+    pub fn call_opaque<R, O>(
+        &self,
+        chain: &crate::opaque::OpaqueChain,
+        core: fn(&mut R) -> O,
+        req: &mut R,
+    ) -> Result<O, i32> {
+        {
+            let mut st = self.state.lock().unwrap();
+            if let Some(until) = st.open_until {
+                if Instant::now() < until {
+                    return Err(crate::opaque::OPAQUE_REJECT); // 开：立即拒绝
+                }
+                // 半开：冷却结束，放行一次试探并重置
+                st.open_until = None;
+                st.failures = 0;
+            }
+        }
+        match chain.exec(core, req) {
+            Ok(v) => {
+                self.state.lock().unwrap().failures = 0; // 成功重置
+                Ok(v)
+            }
+            Err(e) => {
+                let mut st = self.state.lock().unwrap();
+                st.failures += 1;
+                if st.failures >= self.threshold {
+                    st.open_until = Some(Instant::now() + self.cooldown);
+                }
+                Err(e)
+            }
+        }
+    }
 }

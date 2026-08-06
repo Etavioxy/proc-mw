@@ -5,8 +5,10 @@
 //!      运行期编译插件 `PluginOpaque::to_node()` 全链路（任意 Rust 代码 + 共享 repr(C) 类型）。
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use proc_mw::opaque::{OpaqueChain, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
+use proc_mw::opaque_gov::{OpaqueMetrics, OpaqueRateLimiter};
 
 /// 共享类型（repr(C)：宿主与插件各自定义同一布局）
 #[repr(C)]
@@ -61,7 +63,7 @@ unsafe extern "C" fn exit_tag(req: *mut std::ffi::c_void) {
 }
 
 fn node(f: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32) -> OpaqueNode {
-    OpaqueNode {
+    OpaqueNode::Thin {
         enter: f,
         exit: None,
         keepalive: Arc::new(()),
@@ -71,7 +73,7 @@ fn node_exit(
     enter: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32,
     exit: unsafe extern "C" fn(*mut std::ffi::c_void),
 ) -> OpaqueNode {
-    OpaqueNode {
+    OpaqueNode::Thin {
         enter,
         exit: Some(exit),
         keepalive: Arc::new(()),
@@ -167,6 +169,59 @@ fn send_sync_concurrent_chains() {
     for h in handles {
         assert_eq!(h.join().unwrap(), 1);
     }
+}
+
+// ===== 治理层迁移：类型无关治理在任意类型链上（不再 i32 Ctx 锚定）=====
+
+#[test]
+fn opaque_governance_metrics_on_arbitrary_type() {
+    let m = Arc::new(OpaqueMetrics::new());
+    let chain = OpaqueChain::new(vec![OpaqueNode::Stateful(m.clone()), node(discount)]);
+    let mut o = order(1, 10);
+    let r = chain.exec(|o| o.qty, &mut o).unwrap();
+    assert_eq!(r, 9);
+    assert_eq!(m.calls(), 1);
+    assert_eq!(m.successes(), 1, "成功路径 exit 计成功");
+    assert_eq!(m.errors(), 0);
+    // 错误短路不达 exit → 只计调用不计成功
+    let m2 = Arc::new(OpaqueMetrics::new());
+    let chain2 = OpaqueChain::new(vec![OpaqueNode::Stateful(m2.clone()), node(reject_big)]);
+    let mut big = order(1, 200);
+    assert_eq!(chain2.exec(|o| o.qty, &mut big), Err(OPAQUE_REJECT));
+    assert_eq!(m2.calls(), 1);
+    assert_eq!(m2.successes(), 0);
+    assert_eq!(m2.errors(), 1, "错误 = 调用 - 成功");
+}
+
+#[test]
+fn opaque_rate_limiter_rejects_over_quota() {
+    let rl = Arc::new(OpaqueRateLimiter::new(2, Duration::from_secs(10)));
+    let chain = OpaqueChain::new(vec![OpaqueNode::Stateful(rl.clone()), node(discount)]);
+    let mut o1 = order(1, 10);
+    assert_eq!(chain.exec(|o| o.qty, &mut o1).unwrap(), 9);
+    let mut o2 = order(2, 10);
+    assert_eq!(chain.exec(|o| o.qty, &mut o2).unwrap(), 9);
+    let mut o3 = order(3, 10);
+    assert_eq!(chain.exec(|o| o.qty, &mut o3), Err(OPAQUE_REJECT), "第 3 次超配额被拒");
+}
+
+#[test]
+fn opaque_circuit_breaker_wraps_arbitrary_chain() {
+    use proc_mw::circuit_breaker::CircuitBreaker;
+    let cb = CircuitBreaker::new(3, Duration::from_millis(50));
+    let chain = OpaqueChain::new(vec![node(reject_big)]);
+    // 3 次失败 → 打开
+    for _ in 0..3 {
+        let mut big = order(1, 200);
+        assert_eq!(cb.call_opaque(&chain, |o| o.qty, &mut big), Err(OPAQUE_REJECT));
+    }
+    // 打开后即使小单也被熔断拒绝
+    let mut small = order(2, 5);
+    assert_eq!(cb.call_opaque(&chain, |o| o.qty, &mut small), Err(OPAQUE_REJECT), "熔断打开");
+    // 冷却后半开放行试探
+    std::thread::sleep(Duration::from_millis(60));
+    let mut small2 = order(3, 5);
+    assert_eq!(cb.call_opaque(&chain, |o| o.qty, &mut small2).unwrap(), 5, "半开放行");
 }
 
 /// 运行期编译插件全链路：任意 Rust 代码（struct 字段 ×2）→ dlopen → to_node → 链执行

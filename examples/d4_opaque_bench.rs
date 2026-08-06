@@ -25,7 +25,7 @@ unsafe extern "C" fn bump(req: *mut std::ffi::c_void, _: *mut std::ffi::c_void) 
 }
 
 fn node() -> OpaqueNode {
-    OpaqueNode {
+    OpaqueNode::Thin {
         enter: bump,
         exit: None,
         keepalive: Arc::new(()),
