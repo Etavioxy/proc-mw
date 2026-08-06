@@ -1,0 +1,8 @@
+[package]
+name = "small_service"
+version = "0.1.0"
+edition = "2021"
+description = "三档体量测试·小型：小服务用 proc-mw 全套方法（配置链+运行期编译+观测）"
+
+[dependencies]
+proc-mw = { path = "../../..", features = ["runtime"] }
