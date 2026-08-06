@@ -202,6 +202,15 @@ pub fn pipeline_stats() -> (u64, u64) {
     )
 }
 
+/// 工具链指纹（懒求值）：rustc 版本哈希——缓存按工具链失效（升级后旧 .so 不用）
+static TOOLCHAIN_FP: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+fn toolchain_fingerprint() -> u64 {
+    *TOOLCHAIN_FP.get_or_init(|| {
+        let ver = toolchain_report().rustc.unwrap_or_default();
+        fnv1a64(ver.as_bytes())
+    })
+}
+
 /// 源码简单哈希（FNV-1a 64 位）——编译缓存的键
 fn fnv1a64(data: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
@@ -229,7 +238,8 @@ pub fn build_plugin_cached(
     } else {
         "so"
     };
-    let hash = fnv1a64(middleware_source.as_bytes());
+    // 缓存键 = 源码哈希 ^ 工具链指纹（升级 rustc 后旧 .so 不再命中）
+    let hash = fnv1a64(middleware_source.as_bytes()) ^ toolchain_fingerprint().rotate_left(32);
     let cache_path = cache_dir.join(format!("{name}_{hash:016x}.{ext}"));
 
     if cache_path.exists() {
