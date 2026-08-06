@@ -175,6 +175,26 @@ fn send_sync_concurrent_chains() {
     }
 }
 
+// ===== 任意类型链配置驱动（config.rs 补 i32 中心缺口）=====
+
+#[test]
+fn opaque_chain_config_driven() {
+    use proc_mw::config::build_opaque_chain;
+    // 配置 spec → OpaqueChain（非 i32）：metrics + rate-limit:1 + pass 开关
+    let chain = build_opaque_chain(&["metrics", "rate-limit:1", "pass"]).unwrap();
+    assert_eq!(chain.len(), 3, "配置构建 3 节点");
+    let mut o1 = order(1, 10);
+    assert!(chain.exec(|o| o.qty, &mut o1).is_ok(), "第 1 次通过限流");
+    let mut o2 = order(2, 10);
+    assert_eq!(chain.exec(|o| o.qty, &mut o2), Err(OPAQUE_REJECT), "rate-limit:1 第 2 次被拒");
+    // 开关配置
+    let chain2 = build_opaque_chain(&["reject"]).unwrap();
+    let mut o3 = order(3, 10);
+    assert_eq!(chain2.exec(|o| o.qty, &mut o3), Err(OPAQUE_REJECT), "reject 开关");
+    // 未知配置报错（配置校验）
+    assert!(build_opaque_chain(&["nope"]).is_err(), "未知配置明确报错");
+}
+
 // ===== D3 压力：生产负载下并发热替换（RCU 不撕裂）=====
 
 #[test]
