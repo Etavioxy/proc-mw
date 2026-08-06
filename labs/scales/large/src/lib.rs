@@ -12,3 +12,13 @@ pub struct InputEvent {
     pub pos: (f32, f32),
     pub audited: bool, // 审计标记（插件写入）
 }
+
+/// 网络同步消息（S02）：每客户端限流
+#[derive(Event, Clone, Debug)]
+pub struct NetMsg {
+    pub player_id: u64,
+    pub kind: u8,
+    pub payload: u32,
+    pub passed: bool, // 限流通过标记（链写入，供 bevy 侧判定）
+}
+
