@@ -624,6 +624,30 @@ fn opaque_exec_or_fallback_on_rejection() {
     assert_eq!(r2, 50, "正常请求不经 fallback");
 }
 
+// ===== 可失败核心（exec_fallible：区分"链拒"与"核心败"错误域）=====
+
+#[test]
+fn opaque_exec_fallible_distinguishes_error_domains() {
+    use proc_mw::opaque::FallibleError;
+    // 空链 + 可失败核心（核心失败）
+    let chain = OpaqueChain::empty();
+    let mut o = order(1, 10);
+    let r = chain.exec_fallible(|o| -> Result<i64, &'static str> {
+        if o.qty > 50 { Err("core: too big") } else { Ok(o.qty) }
+    }, &mut o);
+    assert_eq!(r, Ok(10), "核心成功");
+    let mut big = order(1, 100);
+    let r2 = chain.exec_fallible(|o| -> Result<i64, &'static str> {
+        if o.qty > 50 { Err("core: too big") } else { Ok(o.qty) }
+    }, &mut big);
+    assert_eq!(r2, Err(FallibleError::Core("core: too big")), "核心失败域");
+    // 链拒绝域（reject_big 节点）
+    let chain2 = OpaqueChain::new(vec![node(reject_big)]);
+    let mut o2 = order(1, 200);
+    let r3 = chain2.exec_fallible(|o| -> Result<i64, &'static str> { Ok(o.qty) }, &mut o2);
+    assert_eq!(r3, Err(FallibleError::Chain(2)), "链拒绝域（≠核心失败）");
+}
+
 // ===== opaque exec_parallel（对齐 Ctx 链：多请求并行经链）=====
 
 #[test]

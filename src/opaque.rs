@@ -78,6 +78,13 @@ pub trait HasTrace {
     fn set_trace_id(&mut self, v: u64);
 }
 
+/// 可失败核心执行的错误域：链拒绝（返回码）或核心失败
+#[derive(Debug, Clone, PartialEq)]
+pub enum FallibleError<E> {
+    Chain(i32),
+    Core(E),
+}
+
 /// 类型无关中间件节点（D2 槽位：Thin fn-ptr 或 Stateful dyn）
 #[derive(Clone)]
 pub enum OpaqueNode {
@@ -170,6 +177,21 @@ impl OpaqueChain {
             }
         }
         Ok(out)
+    }
+
+    /// 可失败核心执行：核心返回 `Result<O, E>`，与链拒绝（返回码）**区分错误域**。
+    /// 此前 opaque core 不可失败（`Fn(&mut R) -> O`）；生产核心常返回 Result
+    /// （如 Ctx 链的 `Result<i32, MwError>`）——调用方需区分"链拒"与"核心败"。
+    pub fn exec_fallible<R, O, E>(
+        &self,
+        core: impl Fn(&mut R) -> Result<O, E>,
+        req: &mut R,
+    ) -> Result<O, FallibleError<E>> {
+        match self.exec(core, req) {
+            Ok(Ok(o)) => Ok(o),
+            Ok(Err(e)) => Err(FallibleError::Core(e)),
+            Err(code) => Err(FallibleError::Chain(code)),
+        }
     }
 
     /// 降级执行（对齐 `chain::exec_or`）：链拒绝（返回码）时走 fallback（恢复/降级）。
