@@ -36,16 +36,22 @@
 3. ~~**OpaqueBuiltin 形式化（D2）**~~ ✅ 已闭环（510a9ee）。
 4. ~~**布局指纹增强（D7）**~~ ✅ 已闭环（(offset,size,align) 三元组，b19ee2d）。
 
-## 下一轮待推边（新发现）
-- ~~**async 任意类型链**~~ ✅ 已闭环（baf7c7a）：OpaqueAsyncChain——运行期编译同步插件 +
-  宿主异步节点真实 await；extern "C" 无法安全导出 async 是显式边界。
-- **任意类型沙箱（D7 信任模型）**：subprocess 沙箱（sandbox.rs/mw_exec）是 i32 stdin/stdout，
-  任意类型请求需编组（marshalling）——与零拷贝 c_void 共享内存模型冲突。**待推。**
+## 待推边（最终裁决）
+- ~~**async 任意类型链**~~ ✅ 已闭环（baf7c7a + 04d7796）：OpaqueAsyncChain + 真实 await 进
+  flume 生产路径（send_async）；extern "C" 无法安全导出 async 是显式边界。
+- ~~**任意类型沙箱（D7 信任模型）**~~ ✅ 已闭环 + 边界裁决（8e162d1 + 推理）：
+  字节编组沙箱适用 repr(C)/POD；**堆类型（String/Vec/Box）含进程内指针，跨进程编组
+  物理上失效**（marshalling 与零拷贝 c_void 模型冲突是根本边界，非可解缺口）——
+  堆类型走信任模型 + 返回码契约。
 - ~~**有状态插件热更**~~ ✅ 已实证（960096c）：新 .dylib 状态归零，旧 .dylib 保活独立；
   设计原则固化"状态放宿主 Stateful 节点，插件应为无状态变换"。
-- **直接共享类型**（usergoals，4050c52）：非 repr(C) 类型经 crate 依赖直接共享（bevy 兼容
-  路径）——非 repr(C) 布局不需要手工镜像，共享 crate 保证同一定义。**这是 large（bevy）
-  场景落地的前提。**
+- ~~**直接共享类型**~~ ✅ 已实证（4050c52 + 69d25bc）：非 repr(C) 类型经 crate 依赖直接共享；
+  插件操作**真实 bevy Entity**（依赖 bevy_ecs 本体）——生态类型兼容正题实证。
+- ~~**config.rs i32 中心**~~ ✅ 已闭环（62cd56d）：build_opaque_chain / parse_opaque_node
+  配置驱动任意类型链（metrics/限流/开关）。
+- **evcxr 依赖 dylib 化（裁决：差异非缺口）**：evcxr 强制依赖 dylib 化是为了 REPL 增量状态
+  保持（改依赖代码不丢变量）；proc-mw 插件是自包含 cdylib，改依赖 = 重编插件（正常流程）。
+  **不需要复刻**——proc-mw 的"整插件重编"在无状态中间件模型下是正确的，差异有理由。
 
 ## 推边判定（每推完一条，回到本表更新状态）
 > 循环：推边 → 全量回归 → 原子提交 → 更新本表 → 推下一条。
