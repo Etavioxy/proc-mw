@@ -252,6 +252,35 @@ static COUNT: AtomicU64 = AtomicU64::new(0);
     );
 }
 
+// ===== 失败热更可回滚：坏源码编译失败 → 旧中间件保持（生产安全）=====
+
+#[test]
+fn failed_hot_reload_keeps_old_middleware() {
+    let src_v1 = r#"
+#[repr(C)]
+pub struct Order { pub id: u64, pub qty: i64, pub hops: u32 }
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    let o = unsafe { &mut *(req as *mut Order) };
+    o.qty += 5;
+    o.hops += 1;
+    0
+}
+"#;
+    let so1 = proc_mw::compile::build_plugin_cached("safe_v1", src_v1, &std::env::temp_dir()).unwrap();
+    let v1 = proc_mw::runtime::PluginOpaque::load(so1.to_str().unwrap()).unwrap();
+    let mut chain = OpaqueChain::new(vec![v1.to_node()]);
+    let mut m = order(1, 10);
+    assert_eq!(chain.exec(|o| o.qty, &mut m).unwrap(), 15, "v1 生效 qty+5");
+
+    // v2 编译失败（语法错误）→ build_plugin 返回 Err → 不 set → v1 保持
+    let src_bad = "#[no_mangle] fn broken( {"; // 语法错误
+    let r = proc_mw::compile::build_plugin_cached("safe_v2", src_bad, &std::env::temp_dir());
+    assert!(r.is_err(), "坏源码编译失败");
+    let mut m2 = order(1, 10);
+    assert_eq!(chain.exec(|o| o.qty, &mut m2).unwrap(), 15, "失败热更后旧中间件保持（可回滚）");
+}
+
 // ===== 链类型无关性：同一链实例处理多种请求类型（D2 类型无关）=====
 
 #[test]
