@@ -29,3 +29,14 @@ pub struct Player {
     pub hp: u32,
     pub name: String,
 }
+
+/// flume 通道场景（small story）共享消息：非 repr(C)，直接共享（usergoals）
+#[derive(Debug, Clone)]
+pub struct ChannelMsg {
+    pub id: u64,
+    pub kind: u8,
+    pub priority: u8,
+    pub ttl_ms: u32,
+    pub text: String, // 堆字段——直接共享类型定义保证布局一致
+}
+
