@@ -18,3 +18,16 @@
 | 插件依赖 = `large_service` + `bevy_ecs` | 插件直接进 bevy 依赖图 | D5 |
 | 偶数实体被过滤（3/6 保留） | 插件按真实 Entity index 决策 | 核心目的 |
 | bevy 消费者收到 kept 事件 | 事件流贯通 | D1 |
+
+## D5 机器码证据（mw_enter 反汇编）
+
+```
+_mw_enter:
+  ldrb w9, [x0]          ; 读请求首字节（Entity 布局）
+  tbnz w9, #0x0, ...     ; 判 bit0（index 奇偶）
+  mov  w0, #0x2          ; 偶数 → 返回码 2（拒绝）
+  ret
+```
+
+`Entity::index()` 的奇偶判断被**内联进插件机器码**（仅 4 条指令）——直接依赖路径
+在机器码级融合 bevy_ecs 真实类型（D5 证据：外部生态代码进入插件的编译/链接/内联）。
