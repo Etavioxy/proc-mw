@@ -60,6 +60,13 @@
 - **修复方向**：插件 ABI 类型无关化——`extern "C" fn(*mut c_void, *mut c_void) -> i32`（类型擦除指针），插件在与宿主共享的类型定义 crate 上编译（evcxr 模式），downcast 后调用任意类型方法；类型契约随插件传递（D7 边界收口）。
 - **证据**：本轮（L7）将用 `*mut c_void` + String 插件证明"动态编译调任意类型方法"可行。
 
+## L7b · rustc_driver 集成被网络阻塞（环境项）
+
+- **现象**：`rustc_driver`（rustc 作为库内嵌）需 nightly + `rustc_private` + rustc-dev 组件。nightly 已装、`librustc_driver` 存在，但 **rustc-dev 组件下载失败**——官方 static.rust-lang.org 与 rsproxy 镜像均在大文件下载时超时/connection reset。
+- **影响**：rustc_driver 集成暂不可行（非代码问题，纯环境网络限制）。
+- **裁定**：**cargo 子进程管线是当前务实选择**（已实现核心目的：编译任意 Rust→dlopen→热替换）。rustc_driver 为可选优化（去掉 cargo 依赖），网络恢复后可再试。
+- **影响维度**：D6 编译域 / 12 域清单 rustc_driver 项。
+
 ---
 
 > 待探索：D6~D8 的实现中大概率还会发现新的极限，持续追加到本表。

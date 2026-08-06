@@ -48,6 +48,26 @@ impl<R, O> AsyncChain<R, O> {
         Ok(ctx.output.take().expect("核心必须产出输出"))
     }
 
+    /// async 泛型重试：失败重跑最多 attempts 次（R 需 Clone 重建输入）
+    pub async fn exec_retry(
+        &self,
+        core: impl Fn(&mut Ctx<R, O>) -> Result<O, MwError> + Copy,
+        input: R,
+        attempts: u32,
+    ) -> Result<O, MwError>
+    where
+        R: Clone,
+    {
+        let mut last_err = None;
+        for _ in 0..attempts {
+            match self.exec(core, input.clone()).await {
+                Ok(v) => return Ok(v),
+                Err(e) => last_err = Some(e),
+            }
+        }
+        Err(last_err.unwrap_or(MwError::Halted))
+    }
+
     /// async 泛型通道的 panic 恢复：中间件调用（catch_unwind 包 poll）与核心都 catch
     pub async fn exec_catch(
         &self,

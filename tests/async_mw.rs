@@ -4,6 +4,8 @@
 use std::sync::Arc;
 
 use proc_mw::async_mw::{AsyncAdd, AsyncChain, AsyncRejectNegative, AsyncMw};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use proc_mw::dispatch::{Ctx, Flow, MwError};
 
 fn core(ctx: &mut Ctx) -> Result<i32, MwError> {
@@ -81,6 +83,34 @@ fn async_core_panic_caught() {
     // 链 panic 后可复用
     let r2 = futures::executor::block_on(chain.exec(core, 5)).unwrap();
     assert_eq!(r2, 7);
+}
+
+static ACALLS: AtomicUsize = AtomicUsize::new(0);
+
+/// 前 1 次失败，之后成功
+fn flaky_async_core(ctx: &mut Ctx) -> Result<i32, MwError> {
+    let n = ACALLS.fetch_add(1, Ordering::SeqCst);
+    if n < 1 {
+        Err(MwError::Rejected("flaky"))
+    } else {
+        Ok(ctx.input + 1)
+    }
+}
+
+#[test]
+fn async_retry_succeeds_after_transient() {
+    ACALLS.store(0, Ordering::SeqCst);
+    let chain = AsyncChain::new(vec![Arc::new(AsyncAdd { n: 1 }) as Arc<dyn AsyncMw>]);
+    let r = futures::executor::block_on(chain.exec_retry(flaky_async_core, 5, 3)).unwrap();
+    assert_eq!(r, 7, "5 → await +1=6 → core 7");
+}
+
+#[test]
+fn async_retry_exhausts() {
+    ACALLS.store(0, Ordering::SeqCst);
+    let chain = AsyncChain::new(vec![Arc::new(AsyncAdd { n: 1 }) as Arc<dyn AsyncMw>]);
+    let r = futures::executor::block_on(chain.exec_retry(flaky_async_core, 5, 1));
+    assert_eq!(r, Err(MwError::Rejected("flaky")));
 }
 
 #[test]

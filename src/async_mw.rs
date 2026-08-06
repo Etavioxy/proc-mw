@@ -108,6 +108,23 @@ impl AsyncChain {
         Ok(ctx.output)
     }
 
+    /// async 重试：失败重跑整条链最多 attempts 次（核心须 Copy 可重入）
+    pub async fn exec_retry(
+        &self,
+        core: impl Fn(&mut Ctx) -> Result<i32, MwError> + Copy,
+        input: i32,
+        attempts: u32,
+    ) -> Result<i32, MwError> {
+        let mut last_err = None;
+        for _ in 0..attempts {
+            match self.exec(core, input).await {
+                Ok(v) => return Ok(v),
+                Err(e) => last_err = Some(e),
+            }
+        }
+        Err(last_err.unwrap_or(MwError::Halted))
+    }
+
     /// async 通道的 panic 恢复：**中间件调用**（async future，catch_unwind 包 poll）与
     /// **核心**（同步）都 catch → MwError。链内完整兜底，不依赖调用方 executor。
     pub async fn exec_catch(
