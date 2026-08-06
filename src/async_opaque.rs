@@ -13,8 +13,46 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 use crate::opaque::{OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE};
+
+/// 异步超时错误：链失败（返回码）或超时（挂起 future 被取消）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AsyncTimeoutError {
+    Chain(i32),
+    Timeout,
+}
+
+/// 真实计时器 future（无 tokio）：线程 sleep 后唤醒 waker，poll 返回 Ready
+pub struct Timer {
+    deadline: Instant,
+}
+impl Timer {
+    pub fn new(dur: Duration) -> Self {
+        Timer { deadline: Instant::now() + dur }
+    }
+}
+impl Future for Timer {
+    type Output = ();
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        if Instant::now() >= self.deadline {
+            Poll::Ready(())
+        } else {
+            let waker = cx.waker().clone();
+            let deadline = self.deadline;
+            std::thread::spawn(move || {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if !remaining.is_zero() {
+                    std::thread::sleep(remaining);
+                }
+                waker.wake();
+            });
+            Poll::Pending
+        }
+    }
+}
 
 /// 异步类型无关中间件（有状态；`*mut c_void` 是裸指针，可安全跨 await 持有）
 pub trait OpaqueAsyncMw: Send + Sync {
@@ -78,16 +116,18 @@ impl OpaqueAsyncChain {
 
     /// 异步执行：sync 节点同步调（含运行期编译插件），async 节点真实 await；
     /// 核心后 exit 逆序洋葱（sync 的 exit/stateful exit/async exit）。
-    pub async fn exec<R, O>(&self, core: fn(&mut R) -> O, req: &mut R) -> Result<O, i32> {
+    /// `R: Send`：exec 返回的 future 可 Send（可跨线程 / boxed / select 竞速）。
+    pub async fn exec<R: Send, O>(&self, core: fn(&mut R) -> O, req: &mut R) -> Result<O, i32> {
         let nodes = self.nodes.as_ref();
-        let ptr = req as *mut R as *mut std::ffi::c_void;
+        let addr = req as *mut R as usize; // 捕获 usize（Send）；&mut R 的地址在 exec 全程有效
+        let mut p = || addr as *mut std::ffi::c_void; // 每次使用处转指针，避免跨 await 持有裸指针
         for n in nodes.iter() {
             let code = match n {
                 OpaqueAsyncNode::Sync(sn) => match sn {
-                    OpaqueNode::Thin { enter, .. } => unsafe { (enter)(ptr, std::ptr::null_mut()) },
-                    OpaqueNode::Stateful(mw) => mw.enter(ptr),
+                    OpaqueNode::Thin { enter, .. } => unsafe { (enter)(p(), std::ptr::null_mut()) },
+                    OpaqueNode::Stateful(mw) => mw.enter(p()),
                 },
-                OpaqueAsyncNode::Async(mw) => mw.call(ptr).await,
+                OpaqueAsyncNode::Async(mw) => mw.call(p()).await,
             };
             match code {
                 OPAQUE_CONTINUE => {}
@@ -98,12 +138,33 @@ impl OpaqueAsyncChain {
         let out = core(req);
         for n in nodes.iter().rev() {
             match n {
-                OpaqueAsyncNode::Sync(OpaqueNode::Thin { exit: Some(f), .. }) => unsafe { f(ptr) },
-                OpaqueAsyncNode::Sync(OpaqueNode::Stateful(mw)) => mw.exit(ptr),
-                OpaqueAsyncNode::Async(mw) => mw.exit(ptr),
+                OpaqueAsyncNode::Sync(OpaqueNode::Thin { exit: Some(f), .. }) => unsafe { f(p()) },
+                OpaqueAsyncNode::Sync(OpaqueNode::Stateful(mw)) => mw.exit(p()),
+                OpaqueAsyncNode::Async(mw) => mw.exit(p()),
                 _ => {}
             }
         }
         Ok(out)
+    }
+
+    /// 异步超时执行：`select` 竞速 `exec` 与计时器——超时则**取消挂起的执行**
+    /// （drop 未完成 future 即取消，Rust future 语义）。挂死 async 中间件可被终止，
+    /// 这是同步 DeadlineCheck（仅预检）做不到的。
+    pub async fn exec_timeout<R: Send, O>(
+        &self,
+        core: fn(&mut R) -> O,
+        req: &mut R,
+        dur: Duration,
+    ) -> Result<O, AsyncTimeoutError> {
+        use futures::FutureExt;
+        let exec_fut = self.exec(core, req).boxed();
+        let timer = Timer::new(dur).boxed();
+        match futures::future::select(exec_fut, timer).await {
+            futures::future::Either::Left((r, _)) => r.map_err(AsyncTimeoutError::Chain),
+            futures::future::Either::Right((_, exec_fut)) => {
+                drop(exec_fut); // 取消挂起的执行
+                Err(AsyncTimeoutError::Timeout)
+            }
+        }
     }
 }

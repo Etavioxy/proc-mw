@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use proc_mw::async_opaque::{OpaqueAsyncChain, OpaqueAsyncMw, OpaqueAsyncNode};
+use proc_mw::async_opaque::{AsyncTimeoutError, OpaqueAsyncChain, OpaqueAsyncMw, OpaqueAsyncNode};
 use proc_mw::opaque::{OpaqueChain, OpaqueMw, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
 use proc_mw::opaque_gov::{OpaqueMetrics, OpaqueRateLimiter};
 
@@ -173,6 +173,35 @@ fn send_sync_concurrent_chains() {
     for h in handles {
         assert_eq!(h.join().unwrap(), 1);
     }
+}
+
+// ===== 异步超时：挂死 async 中间件可被取消（同步 DeadlineCheck 做不到）=====
+
+/// 挂死中间件：永不 resolve
+struct Hung;
+impl OpaqueAsyncMw for Hung {
+    fn call<'a>(&'a self, _req: *mut std::ffi::c_void) -> Pin<Box<dyn Future<Output = i32> + Send + 'a>> {
+        Box::pin(async move {
+            futures::future::pending::<()>().await; // 永不完成
+            OPAQUE_CONTINUE
+        })
+    }
+}
+
+#[test]
+fn async_opaque_timeout_cancels_hung_middleware() {
+    use std::time::Instant;
+    let chain = OpaqueAsyncChain::new(vec![OpaqueAsyncNode::Async(Arc::new(Hung))]);
+    let mut o = order(1, 10);
+    let t = Instant::now();
+    let r = futures::executor::block_on(chain.exec_timeout(|o| o.qty, &mut o, Duration::from_millis(50)));
+    assert_eq!(r, Err(AsyncTimeoutError::Timeout), "挂死中间件被超时终止");
+    assert!(t.elapsed() < Duration::from_millis(500), "超时 ~50ms 返回");
+    // 链可复用：挂死节点被取消后，换正常节点仍可执行
+    let chain2 = OpaqueAsyncChain::new(vec![OpaqueAsyncNode::Sync(OpaqueNode::Stateful(Arc::new(OpaqueMetrics::new())))]);
+    let mut o2 = order(2, 10);
+    let r2 = futures::executor::block_on(chain2.exec(|o| o.qty, &mut o2)).unwrap();
+    assert_eq!(r2, 10, "取消后链可复用");
 }
 
 // ===== 任意类型链配置驱动（config.rs 补 i32 中心缺口）=====
