@@ -66,6 +66,17 @@ impl OpaqueBuiltin {
     }
 }
 
+/// 跨切上下文字段 trait（D2 通道语义复用化）：
+/// 请求实现 `HasDeadline` → 链可用 `exec_with_deadline` 复用超时检查（免每场景手写）。
+pub trait HasDeadline {
+    fn deadline_ms(&self) -> u64; // u64::MAX = 无限制
+}
+
+/// 跨切 trace 字段 trait（同上）：请求实现 `HasTrace` → 链可复用 trace 访问
+pub trait HasTrace {
+    fn trace_id(&self) -> u64;
+}
+
 /// 类型无关中间件节点（D2 槽位：Thin fn-ptr 或 Stateful dyn）
 #[derive(Clone)]
 pub enum OpaqueNode {
@@ -158,6 +169,23 @@ impl OpaqueChain {
             }
         }
         Ok(out)
+    }
+
+    /// 跨切 deadline 执行：请求实现 `HasDeadline` → 过期即拒（返回码 2），
+    /// 免每场景手写 deadline 检查节点（复用机制）。
+    pub fn exec_with_deadline<R: HasDeadline + Send, O>(
+        &self,
+        core: impl Fn(&mut R) -> O,
+        req: &mut R,
+    ) -> Result<O, i32> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        if req.deadline_ms() != u64::MAX {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+            if now > req.deadline_ms() {
+                return Err(OPAQUE_REJECT);
+            }
+        }
+        self.exec(core, req)
     }
 
     /// 重试执行（语义原语，对齐 `chain::exec_retry`）：链失败（返回码 ≠0）时重试

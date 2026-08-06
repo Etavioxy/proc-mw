@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use proc_mw::async_opaque::{AsyncTimeoutError, OpaqueAsyncChain, OpaqueAsyncMw, OpaqueAsyncNode};
-use proc_mw::opaque::{OpaqueChain, OpaqueMw, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
+use proc_mw::opaque::{HasDeadline, OpaqueChain, OpaqueMw, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
 use proc_mw::opaque_gov::{OpaqueMetrics, OpaqueRateLimiter};
 
 /// 共享类型（repr(C)：宿主与插件各自定义同一布局）
@@ -250,6 +250,30 @@ static COUNT: AtomicU64 = AtomicU64::new(0);
         Some(11),
         "状态跨热更迁移（v1 的 5 + v2 的 2×3 = 11），非归零"
     );
+}
+
+// ===== 跨切 deadline（HasDeadline trait 复用机制，免每场景手写）=====
+
+struct DeadlineReq {
+    deadline: u64,
+}
+impl HasDeadline for DeadlineReq {
+    fn deadline_ms(&self) -> u64 {
+        self.deadline
+    }
+}
+
+#[test]
+fn opaque_exec_with_deadline_crosscutting() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+    let chain = OpaqueChain::empty(); // deadline 由 exec_with_deadline 跨切处理
+    let mut r = DeadlineReq { deadline: now + 1000 };
+    assert!(chain.exec_with_deadline(|r| r.deadline, &mut r).is_ok(), "未过期通过");
+    let mut r2 = DeadlineReq { deadline: now - 1000 };
+    assert_eq!(chain.exec_with_deadline(|r| r.deadline, &mut r2), Err(OPAQUE_REJECT), "过期被拒");
+    let mut r3 = DeadlineReq { deadline: u64::MAX };
+    assert!(chain.exec_with_deadline(|r| r.deadline, &mut r3).is_ok(), "u64::MAX 无限制");
 }
 
 // ===== 任意类型链配置驱动（config.rs 补 i32 中心缺口）=====
