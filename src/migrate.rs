@@ -24,6 +24,30 @@ pub fn adopt<V, R: Send + Clone, O>(
     chain.exec(core, &mut req)
 }
 
+/// D8 候选识别（朴素静态分析，无 syn）：扫描源码中 `fn name(单参) -> 返回` 的
+/// handler——迁移候选（D8"识别候选核心"）。启发式：单参数 + 有返回类型。
+pub fn find_handler_candidates(source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in source.lines() {
+        let t = line.trim();
+        let Some(rest) = t.strip_prefix("fn ") else { continue };
+        let name = rest
+            .split(['(', ' ', '<'])
+            .next()
+            .unwrap_or("")
+            .to_string();
+        let has_arrow = t.contains("->");
+        let paren_open = t.find('(');
+        let single_param = paren_open
+            .map(|i| !t[i..].contains(','))
+            .unwrap_or(false);
+        if has_arrow && single_param && !name.is_empty() && !name.starts_with('_') {
+            out.push(name);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -34,6 +58,22 @@ mod tests {
     #[derive(Clone)]
     struct Req {
         value: i64,
+    }
+
+    #[test]
+    fn find_handler_candidates_detects_handlers() {
+        let src = r#"
+fn handle_login(v: i64) -> i64 { v + 1000 }
+fn handle_get_user(v: i64) -> i64 { v * 2 }
+fn helper(a: i64, b: i64) -> i64 { a + b }   // 双参数：非候选
+fn main() { }
+"#;
+        let candidates = find_handler_candidates(src);
+        assert!(candidates.contains(&"handle_login".to_string()));
+        assert!(candidates.contains(&"handle_get_user".to_string()));
+        assert!(!candidates.contains(&"helper".to_string()), "双参数非候选");
+        assert!(!candidates.contains(&"main".to_string()), "main 无返回/无参数");
+        assert_eq!(candidates.len(), 2);
     }
 
     #[test]
