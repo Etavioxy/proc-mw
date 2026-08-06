@@ -36,6 +36,21 @@
 3. ~~**OpaqueBuiltin 形式化（D2）**~~ ✅ 已闭环（510a9ee）。
 4. ~~**布局指纹增强（D7）**~~ ✅ 已闭环（(offset,size,align) 三元组，b19ee2d）。
 
+## 近期推边闭环（持续循环记录）
+- **语义原语全对齐**：sync opaque（exec/retry/catch/or/parallel + exec_with_deadline/trace）
+  + async（exec/retry/catch/timeout/or + exec_with_trace + exec_retry_timeout）——
+  三套链（Ctx/opaque/async）原语完整。
+- **共享 target-dir**（a0c0872）：直接依赖插件编译 16.3s→0.6s（~28×）；含全局构建锁、
+  产物路径/清理连锁修复。
+- **编译管线可观测**（ecd4224 pipeline_stats）+ **工具链指纹缓存键**（7a32bfa，升级失效）。
+- **泛型通道统一**（0bdda13）：generic::Ctx 经运行期插件进 opaque 链（one mechanism）。
+- **注册表/候选识别**（8923dfb/d188507）：生产声明式插件 + D8 识别。
+- **预热换入**（bd8ad19）：dlopen 准备后台化，swap 500ns。
+- **attach/热更延迟**（384c223/80cff96）：首次 dlopen 424ms，热更 ~660ms（显式接受）。
+- **失败热更回滚**（645fdd5）+ **沙箱协议握手**（e5d5d0b）+ restart 握手回归修复（7a42b9d）。
+- **跨切上下文**（566b584/088e680/9f3e087/05e66c4）：HasDeadline/HasTrace + sync/async 对称。
+- **正确性**（a0c0450 metrics×panic）+ **D3 删**（fc6d337）+ D1 机器码/内存/async 开销证据。
+
 ## D8 迁移工具链（最后做的维度）落地
 - ✅ `migrate::adopt`（61410f6）：通用采纳点——已有 handler 经链包装，加性可回滚。
   实验：6 handler 批量采纳 + 原 handler 未变（回滚）。此前 D8 仅手写包装，无正式采纳点。
