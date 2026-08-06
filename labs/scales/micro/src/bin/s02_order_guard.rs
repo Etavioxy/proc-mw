@@ -39,7 +39,7 @@ fn main() {
         guard.to_node(),
     ]);
     let cb = CircuitBreaker::new(3, Duration::from_millis(80));
-    let mk = |value: i64| MicroReq { value, trace_id: 0, audited: false };
+    let mk = |value: i64| MicroReq { value, trace_id: 0, audited: false, deadline_ms: u64::MAX };
     println!("[2] 链就绪：OpaqueMetrics + guard（拒负数），CircuitBreaker(3, 80ms) 包装");
 
     // 阶段A：负单拒 / 正单放（经 handle_create_order 业务）

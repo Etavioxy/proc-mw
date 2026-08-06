@@ -43,9 +43,10 @@ pub struct ChannelMsg {
 /// 微服务场景（micro story）共享请求：非 repr(C)，直接共享
 #[derive(Debug, Clone)]
 pub struct MicroReq {
-    pub value: i64,     // 业务 handler 输入
-    pub trace_id: u64,  // 追踪
-    pub audited: bool,  // 审计标记
+    pub value: i64,       // 业务 handler 输入
+    pub trace_id: u64,    // 追踪
+    pub audited: bool,    // 审计标记
+    pub deadline_ms: u64, // 超时截止（毫秒时间戳；u64::MAX = 无限制）
 }
 
 

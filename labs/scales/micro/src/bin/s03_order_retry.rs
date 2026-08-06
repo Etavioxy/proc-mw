@@ -62,7 +62,7 @@ fn main() {
     ]);
     println!("[2] 链就绪：OpaqueMetrics + audit 插件 + Flaky(前2次失败)");
 
-    let mut req = MicroReq { value: 100, trace_id: 0, audited: false };
+    let mut req = MicroReq { value: 100, trace_id: 0, audited: false, deadline_ms: u64::MAX };
     let r = chain.exec_retry(|r| handle_create_order(r.value), &mut req, 5).unwrap();
     println!("[3] 前2次瞬时失败 + retry 5 → 订单结果（期望 601）：{r}");
     assert_eq!(r, 601, "audit +1 后 handler(101)+500=601");
@@ -76,7 +76,7 @@ fn main() {
         audit.to_node(),
         OpaqueNode::Stateful(Arc::new(Flaky { fail_left: Arc::new(AtomicUsize::new(3)) })),
     ]);
-    let mut req2 = MicroReq { value: 100, trace_id: 0, audited: false };
+    let mut req2 = MicroReq { value: 100, trace_id: 0, audited: false, deadline_ms: u64::MAX };
     let r2 = chain2.exec_retry(|r| handle_create_order(r.value), &mut req2, 1);
     println!("[4] 前3次失败 + retry 1 → 耗尽（期望 Err(2)）：{r2:?}");
     assert_eq!(r2, Err(OPAQUE_REJECT), "重试耗尽透传错误");

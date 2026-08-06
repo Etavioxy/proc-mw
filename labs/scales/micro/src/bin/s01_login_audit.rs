@@ -59,7 +59,7 @@ fn main() {
         handlers
             .iter()
             .map(|(_, h)| {
-                let mut req = MicroReq { value: 1, trace_id: 0, audited: false };
+                let mut req = MicroReq { value: 1, trace_id: 0, audited: false, deadline_ms: u64::MAX };
                 chain.exec(|r| h(r.value), &mut req).unwrap()
             })
             .sum()
