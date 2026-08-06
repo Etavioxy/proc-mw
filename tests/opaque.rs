@@ -175,6 +175,39 @@ fn send_sync_concurrent_chains() {
     }
 }
 
+// ===== D3 压力：生产负载下并发热替换（RCU 不撕裂）=====
+
+#[test]
+fn concurrent_hot_swap_during_production() {
+    use std::sync::RwLock;
+    // 4 生产者并发 exec + 1 写者反复热更（discount/refund 交替）
+    let chain = Arc::new(RwLock::new(OpaqueChain::new(vec![node(discount)])));
+    let producers: Vec<_> = (0..4)
+        .map(|_| {
+            let c = Arc::clone(&chain);
+            std::thread::spawn(move || {
+                for i in 0..500 {
+                    // 读锁仅取 Arc 快照，exec 在快照上无锁
+                    let snap = c.read().unwrap().clone();
+                    let mut o = order(i, 100);
+                    let r = snap.exec(|o| o.qty, &mut o).unwrap();
+                    assert!(r == 99 || r == 101, "快照要么 v1 要么 v2，不撕裂（得 {r}）");
+                }
+            })
+        })
+        .collect();
+    // 写者：100 次热更
+    for i in 0..100 {
+        let mut guard = chain.write().unwrap();
+        guard.set(0, if i % 2 == 0 { node(discount) } else { node(refund) });
+        std::thread::sleep(Duration::from_micros(10));
+    }
+    for h in producers {
+        h.join().unwrap();
+    }
+    assert_eq!(chain.read().unwrap().len(), 1);
+}
+
 // ===== D3 快照隔离：热替换后持旧快照的读者不撕裂 =====
 
 #[test]
