@@ -152,6 +152,23 @@ impl Sandbox {
         g.stdin = new_child.stdin.take().ok_or("取 stdin 失败")?;
         g.stdout = BufReader::new(new_child.stdout.take().ok_or("取 stdout 失败")?);
         g.child = new_child;
+        // 字节模式重启后需**重新握手**（mw_exec 启动即等握手；否则首个 run_bytes 失败）
+        if self.bytes_mode {
+            g.stdin
+                .write_all(&[SANDBOX_MAGIC, SANDBOX_PROTOCOL_VERSION, b'\n'])
+                .map_err(|e| format!("重启握手写入: {e}"))?;
+            g.stdin.flush().map_err(|e| format!("重启握手 flush: {e}"))?;
+            let mut ack = [0u8; 1];
+            g.stdout
+                .read_exact(&mut ack)
+                .map_err(|_| "重启握手失败（无 ACK）".to_string())?;
+            if ack[0] != SANDBOX_ACK {
+                return Err(format!(
+                    "重启沙箱协议不匹配（ACK 0x{:02x} ≠ 0x{:02x}）",
+                    ack[0], SANDBOX_ACK
+                ));
+            }
+        }
         Ok(())
     }
 }

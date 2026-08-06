@@ -523,6 +523,41 @@ fn opaque_chain_config_driven() {
     assert!(build_opaque_chain(&["nope"]).is_err(), "未知配置明确报错");
 }
 
+// ===== 沙箱重启后仍可用（握手修复验证：重启需重新握手）=====
+
+#[test]
+fn sandbox_restart_rehandshakes_and_works() {
+    let src = r#"
+#[repr(C)]
+pub struct Order { pub id: u64, pub qty: i64, pub hops: u32 }
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    let o = unsafe { &mut *(req as *mut Order) };
+    o.qty -= 1;
+    o.hops += 1;
+    0
+}
+"#;
+    let so = proc_mw::compile::build_plugin_cached("restart_ok", src, &std::env::temp_dir()).unwrap();
+    let exec = std::path::Path::new(env!("CARGO_BIN_EXE_mw_exec"));
+    let sb = proc_mw::sandbox::Sandbox::spawn_bytes(exec, &so).unwrap();
+    let marshal = |o: &Order| -> Vec<u8> {
+        unsafe { std::slice::from_raw_parts((o as *const Order) as *const u8, std::mem::size_of::<Order>()).to_vec() }
+    };
+    let unmarshal = |b: &[u8]| unsafe { std::ptr::read(b.as_ptr() as *const Order) };
+
+    let mut o = order(1, 10);
+    let out = sb.run_bytes(&marshal(&o)).unwrap();
+    assert_eq!(unmarshal(&out).qty, 9, "首次处理正常");
+
+    // 重启（新 mw_exec + 重新握手）→ 应能继续处理
+    sb.restart().expect("重启沙箱（含握手）");
+    let mut o2 = order(2, 10);
+    let out2 = sb.run_bytes(&marshal(&o2)).unwrap();
+    assert_eq!(unmarshal(&out2).qty, 9, "重启后沙箱仍可用（握手修复）");
+    assert_eq!(unmarshal(&out2).hops, 1);
+}
+
 // ===== D3 压力：生产负载下并发热替换（RCU 不撕裂）=====
 
 #[test]
