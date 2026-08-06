@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use crate::opaque::{OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
+use crate::opaque::{HasDeadline, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
 
 /// 异步超时错误：链失败（返回码）或超时（挂起 future 被取消）
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -181,6 +181,23 @@ impl OpaqueAsyncChain {
             .catch_unwind()
             .await
             .unwrap_or(Err(OPAQUE_REJECT))
+    }
+
+    /// 异步超时执行（**请求自带 deadline**）：读 `HasDeadline` 的 deadline_ms，
+    /// 剩余时间作为超时——统一 deadline 字段机制与 async 超时（此前各自独立）。
+    pub async fn exec_timeout_with_deadline<R: Send + HasDeadline + Clone, O>(
+        &self,
+        core: impl Fn(&mut R) -> O + Send + Sync,
+        req: &mut R,
+    ) -> Result<O, AsyncTimeoutError> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let deadline = req.deadline_ms();
+        if deadline == u64::MAX {
+            return self.exec(core, req).await.map_err(AsyncTimeoutError::Chain);
+        }
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+        let remaining = deadline.saturating_sub(now);
+        self.exec_timeout(core, req, Duration::from_millis(remaining)).await
     }
 
     /// 异步超时执行：`select` 竞速 `exec` 与计时器——超时则**取消挂起的执行**

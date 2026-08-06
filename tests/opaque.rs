@@ -381,6 +381,34 @@ fn async_opaque_exec_retry_and_catch() {
     assert_eq!(r2, Err(OPAQUE_REJECT), "async panic 被兜住（不崩溃）");
 }
 
+// ===== 请求自带 deadline 的 async 超时（统一 deadline 字段 + async 超时）=====
+
+#[derive(Clone)]
+struct DeadlineReq2 {
+    deadline: u64,
+}
+impl HasDeadline for DeadlineReq2 {
+    fn deadline_ms(&self) -> u64 {
+        self.deadline
+    }
+}
+
+#[test]
+fn async_opaque_timeout_with_deadline_field() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+    // 短 deadline + 挂死中间件 → 超时（请求自带 deadline 驱动）
+    let chain = OpaqueAsyncChain::new(vec![OpaqueAsyncNode::Async(Arc::new(Hung))]);
+    let mut req = DeadlineReq2 { deadline: now + 50 };
+    let r = futures::executor::block_on(chain.exec_timeout_with_deadline(|r| r.deadline, &mut req));
+    assert_eq!(r, Err(AsyncTimeoutError::Timeout), "请求 deadline 驱动 async 超时");
+    // u64::MAX = 无限制 → 直接执行（不经超时竞速）
+    let chain2 = OpaqueAsyncChain::empty();
+    let mut req2 = DeadlineReq2 { deadline: u64::MAX };
+    let r2 = futures::executor::block_on(chain2.exec_timeout_with_deadline(|r| r.deadline, &mut req2));
+    assert_eq!(r2, Ok(u64::MAX), "无限制 deadline 直接执行");
+}
+
 // ===== 跨切 deadline（HasDeadline trait 复用机制，免每场景手写）=====
 
 struct DeadlineReq {
