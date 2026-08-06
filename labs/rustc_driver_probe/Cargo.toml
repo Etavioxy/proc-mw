@@ -13,3 +13,7 @@ path = "src/main.rs"
 [[bin]]
 name = "full_pipeline"
 path = "src/bin/full_pipeline.rs"
+
+[[bin]]
+name = "compare"
+path = "src/bin/compare.rs"
