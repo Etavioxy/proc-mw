@@ -65,6 +65,11 @@ name = "d1_production_asm"
 path = "examples/d1_production_asm.rs"
 
 [[example]]
+name = "production_chain"
+path = "examples/production_chain.rs"
+required-features = ["runtime"]
+
+[[example]]
 name = "d4_debug_breakdown"
 path = "examples/d4_debug_breakdown.rs"
 
