@@ -124,6 +124,20 @@ impl AsyncMw for AsyncCapExit {
 }
 
 #[test]
+fn async_metrics_counts_calls_and_successes() {
+    use proc_mw::async_mw::AsyncMetrics;
+    let m = Arc::new(AsyncMetrics::new());
+    let chain = AsyncChain::new(vec![m.clone()]);
+    futures::executor::block_on(chain.exec(core, 1)).unwrap();
+    // 错误核心：exit 不达 → errors 计数
+    let chain2 = AsyncChain::new(vec![m.clone()]);
+    let _ = futures::executor::block_on(chain2.exec(|_| Err(MwError::Rejected("boom")), 2));
+    assert_eq!(m.calls(), 2);
+    assert_eq!(m.successes(), 1);
+    assert_eq!(m.errors(), 1, "错误 = 调用 - 成功");
+}
+
+#[test]
 fn async_exit_hook_runs_after_core() {
     let chain = AsyncChain::new(vec![Arc::new(AsyncCapExit { max: 10 }) as Arc<dyn AsyncMw>]);
     // 核心返回 100 → exit 钩子封顶 10（洋葱退出在核心后运行）

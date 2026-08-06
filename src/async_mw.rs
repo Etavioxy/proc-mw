@@ -9,6 +9,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::dispatch::{Ctx, Flow, MwError};
@@ -23,6 +24,41 @@ pub trait AsyncMw: Send + Sync {
 
     /// 核心执行后调用（逆序）；默认空
     fn exit(&self, _ctx: &mut Ctx) {}
+}
+
+/// async 观测中间件（enter 计调用 / exit 计成功；错误 = 调用 - 成功）
+pub struct AsyncMetrics {
+    calls: Arc<AtomicUsize>,
+    successes: Arc<AtomicUsize>,
+}
+impl AsyncMetrics {
+    pub fn new() -> Self {
+        Self {
+            calls: Arc::new(AtomicUsize::new(0)),
+            successes: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+    pub fn calls(&self) -> usize {
+        self.calls.load(Ordering::Relaxed)
+    }
+    pub fn successes(&self) -> usize {
+        self.successes.load(Ordering::Relaxed)
+    }
+    pub fn errors(&self) -> usize {
+        self.calls.load(Ordering::Relaxed) - self.successes.load(Ordering::Relaxed)
+    }
+}
+impl AsyncMw for AsyncMetrics {
+    fn call<'a>(
+        &'a self,
+        _ctx: &'a mut Ctx,
+    ) -> Pin<Box<dyn Future<Output = Result<Flow, MwError>> + Send + 'a>> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move { Ok(Flow::Continue) })
+    }
+    fn exit(&self, _ctx: &mut Ctx) {
+        self.successes.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 /// 一次性挂起：poll 返回 Pending 一次再 Ready——模拟真实 IO 的暂停/恢复（零依赖）
