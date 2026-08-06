@@ -687,6 +687,24 @@ fn opaque_chain_config_driven() {
     assert!(build_opaque_chain(&["nope"]).is_err(), "未知配置明确报错");
 }
 
+// ===== i32 文本模式沙箱（`run`，此前只在示例无测试）=====
+
+#[test]
+fn sandbox_text_mode_i32() {
+    let src = r#"
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(input: *mut i32, _output: *mut i32) -> i32 {
+    unsafe { *input += 5; }
+    0
+}
+"#;
+    let so = proc_mw::compile::build_plugin_cached("txt_sandbox", src, &std::env::temp_dir()).unwrap();
+    let exec = std::path::Path::new(env!("CARGO_BIN_EXE_mw_exec"));
+    let sb = proc_mw::sandbox::Sandbox::spawn(exec, &so).unwrap(); // 文本模式（i32）
+    assert_eq!(sb.run(5).unwrap(), 10, "文本模式 i32 插件 +5");
+    assert_eq!(sb.run(7).unwrap(), 12);
+}
+
 // ===== 沙箱重启后仍可用（握手修复验证：重启需重新握手）=====
 
 #[test]
