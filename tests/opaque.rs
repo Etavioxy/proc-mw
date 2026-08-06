@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use proc_mw::async_opaque::{AsyncTimeoutError, OpaqueAsyncChain, OpaqueAsyncMw, OpaqueAsyncNode};
-use proc_mw::opaque::{HasDeadline, OpaqueBuiltin, OpaqueChain, OpaqueMw, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
+use proc_mw::opaque::{HasDeadline, HasTrace, OpaqueBuiltin, OpaqueChain, OpaqueMw, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
 use proc_mw::opaque_gov::{OpaqueMetrics, OpaqueRateLimiter};
 
 /// 共享类型（repr(C)：宿主与插件各自定义同一布局）
@@ -407,6 +407,29 @@ fn async_opaque_timeout_with_deadline_field() {
     let mut req2 = DeadlineReq2 { deadline: u64::MAX };
     let r2 = futures::executor::block_on(chain2.exec_timeout_with_deadline(|r| r.deadline, &mut req2));
     assert_eq!(r2, Ok(u64::MAX), "无限制 deadline 直接执行");
+}
+
+// ===== 跨切 trace 注入（HasTrace trait + exec_with_trace，与 deadline 对称）=====
+
+#[derive(Clone)]
+struct TraceReq {
+    trace: u64,
+}
+impl HasTrace for TraceReq {
+    fn trace_id(&self) -> u64 {
+        self.trace
+    }
+    fn set_trace_id(&mut self, v: u64) {
+        self.trace = v;
+    }
+}
+
+#[test]
+fn opaque_exec_with_trace_crosscutting() {
+    let chain = OpaqueChain::empty();
+    let mut r = TraceReq { trace: 0 };
+    chain.exec_with_trace(|r| r.trace, &mut r, 42).unwrap();
+    assert_eq!(r.trace, 42, "trace 被跨切注入");
 }
 
 // ===== 跨切 deadline（HasDeadline trait 复用机制，免每场景手写）=====

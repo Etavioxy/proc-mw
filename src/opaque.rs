@@ -72,9 +72,10 @@ pub trait HasDeadline {
     fn deadline_ms(&self) -> u64; // u64::MAX = 无限制
 }
 
-/// 跨切 trace 字段 trait（同上）：请求实现 `HasTrace` → 链可复用 trace 访问
+/// 跨切 trace 字段 trait（同上）：请求实现 `HasTrace` → 链可复用 trace 注入/访问
 pub trait HasTrace {
     fn trace_id(&self) -> u64;
+    fn set_trace_id(&mut self, v: u64);
 }
 
 /// 类型无关中间件节点（D2 槽位：Thin fn-ptr 或 Stateful dyn）
@@ -195,6 +196,18 @@ impl OpaqueChain {
     pub fn exec_catch<R, O>(&self, core: impl Fn(&mut R) -> O, req: &mut R) -> Result<O, i32> {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.exec(core, req)))
             .unwrap_or_else(|_| Err(OPAQUE_REJECT))
+    }
+
+    /// 跨切 trace 注入执行（与 `exec_with_deadline` 对称）：请求实现 `HasTrace` →
+    /// 注入 trace 后执行（免 S06 式插件手写注入）。
+    pub fn exec_with_trace<R: HasTrace + Send, O>(
+        &self,
+        core: impl Fn(&mut R) -> O,
+        req: &mut R,
+        trace: u64,
+    ) -> Result<O, i32> {
+        req.set_trace_id(trace);
+        self.exec(core, req)
     }
 
     /// 重试执行（语义原语，对齐 `chain::exec_retry`）：链失败（返回码 ≠0）时重试
