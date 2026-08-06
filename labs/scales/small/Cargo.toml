@@ -6,6 +6,7 @@ description = "小型档·真实软件 flume：中间热更连接测试（消息
 
 [dependencies]
 flume = "0.11"
+futures = "0.3"
 proc-mw = { path = "../../..", features = ["runtime"] }
 # 直接共享类型（usergoals 非双写声明）：宿主与运行期编译插件同引用
 shared_types = { path = "../../../labs/shared_types" }

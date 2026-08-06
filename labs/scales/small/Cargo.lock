@@ -243,6 +243,7 @@ name = "small_service"
 version = "0.1.0"
 dependencies = [
  "flume",
+ "futures",
  "proc-mw",
  "shared_types",
 ]
