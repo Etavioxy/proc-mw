@@ -520,6 +520,20 @@ fn async_opaque_exec_retry_timeout() {
     assert_eq!(o.hops, 1, "只有成功尝试变换（克隆重放）");
 }
 
+// ===== async 链配置驱动（与 sync build_opaque_chain 对称）=====
+
+#[test]
+fn async_opaque_chain_config_driven() {
+    use proc_mw::config::build_opaque_async_chain;
+    let chain = build_opaque_async_chain(&["metrics", "pass"]).unwrap();
+    assert_eq!(chain.len(), 2);
+    let mut o = order(1, 10);
+    let r = futures::executor::block_on(chain.exec(|o| o.qty, &mut o)).unwrap();
+    assert_eq!(r, 10, "async 配置链执行");
+    // 未知配置报错
+    assert!(build_opaque_async_chain(&["nope"]).is_err());
+}
+
 // ===== async exec_parallel（对齐 sync：多请求并行 async 执行）=====
 
 #[test]

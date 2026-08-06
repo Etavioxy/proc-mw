@@ -9,6 +9,7 @@ use std::sync::Arc;
 use crate::chain::Chain;
 use crate::dispatch::{Builtin, Node};
 use crate::metrics::Metrics;
+use crate::async_opaque::{OpaqueAsyncChain, OpaqueAsyncNode};
 use crate::opaque::{OpaqueBuiltin, OpaqueChain, OpaqueNode};
 use crate::opaque_gov::{OpaqueMetrics, OpaqueRateLimiter};
 use crate::rate_limit::RateLimiter;
@@ -60,6 +61,16 @@ pub fn build_opaque_chain(spec: &[&str]) -> Result<OpaqueChain, String> {
         nodes.push(parse_opaque_node(s)?);
     }
     Ok(OpaqueChain::new(nodes))
+}
+
+/// 异步链配置驱动（与 `build_opaque_chain` 对称）：spec → OpaqueAsyncChain
+/// （节点包为 Sync 槽位）。async 链此前缺配置构建。
+pub fn build_opaque_async_chain(spec: &[&str]) -> Result<OpaqueAsyncChain, String> {
+    let mut nodes = Vec::with_capacity(spec.len());
+    for s in spec {
+        nodes.push(OpaqueAsyncNode::Sync(parse_opaque_node(s)?));
+    }
+    Ok(OpaqueAsyncChain::new(nodes))
 }
 
 /// 带注册表的配置构建：`@name` 引用已注册插件，其余同 `build_opaque_chain`
