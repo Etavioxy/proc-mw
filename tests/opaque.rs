@@ -409,6 +409,22 @@ fn async_opaque_timeout_with_deadline_field() {
     assert_eq!(r2, Ok(u64::MAX), "无限制 deadline 直接执行");
 }
 
+// ===== metrics × exec_catch：panic 兜住 → 计为错误（正确性）=====
+
+#[test]
+fn exec_catch_metrics_counts_panic_as_error() {
+    let metrics = Arc::new(OpaqueMetrics::new());
+    let chain = OpaqueChain::new(vec![
+        OpaqueNode::Stateful(metrics.clone()), // metrics 先 enter（计数）
+        OpaqueNode::Stateful(Arc::new(PanicMw)), // 中间件 panic
+    ]);
+    let mut o = order(1, 10);
+    assert_eq!(chain.exec_catch(|o| o.qty, &mut o), Err(OPAQUE_REJECT), "panic 兜住");
+    assert_eq!(metrics.calls(), 1, "enter 已计数");
+    assert_eq!(metrics.successes(), 0, "exit 未达（panic 中断）");
+    assert_eq!(metrics.errors(), 1, "panic 兜住 → 计为错误（calls - successes）");
+}
+
 // ===== 跨切 trace 注入（HasTrace trait + exec_with_trace，与 deadline 对称）=====
 
 #[derive(Clone)]
