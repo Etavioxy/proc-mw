@@ -21,6 +21,7 @@ pub mod compile;
 pub mod config;
 pub mod dispatch;
 pub mod generic;
+pub mod opaque;
 pub mod circuit_breaker;
 pub mod metrics;
 pub mod precompiled;
