@@ -47,3 +47,16 @@ pub fn exec<R, O>(
     }
     Ok(ctx.output.take().expect("核心必须产出输出"))
 }
+
+/// sync 泛型通道的 panic 恢复：核心（Rust 代码可展开）panic → catch → MwError
+pub fn exec_catch<R, O>(
+    nodes: &[FnMw<R, O>],
+    core: impl Fn(&mut Ctx<R, O>) -> Result<O, MwError>,
+    input: R,
+) -> Result<O, MwError> {
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| exec(nodes, core, input)));
+    match r {
+        Ok(r) => r,
+        Err(_) => Err(MwError::Rejected("core panicked")),
+    }
+}

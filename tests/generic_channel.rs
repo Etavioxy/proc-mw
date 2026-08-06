@@ -77,3 +77,15 @@ fn generic_channel_works_for_primitives_too() {
     let r = generic::exec(&chain, |ctx: &mut Ctx<i32, i32>| Ok(ctx.input + 1), 5).unwrap();
     assert_eq!(r, 6);
 }
+
+#[test]
+fn generic_channel_core_panic_caught() {
+    // sync 泛型通道的核心 panic 恢复（与 async_generic 对齐）
+    let chain = [] as [generic::FnMw<HttpReq, HttpResp>; 0];
+    let req = HttpReq {
+        path: "/api".to_string(),
+        body: vec![],
+    };
+    let r = generic::exec_catch(&chain, |_| -> Result<HttpResp, MwError> { panic!("bug") }, req);
+    assert_eq!(r, Err(MwError::Rejected("core panicked")));
+}
