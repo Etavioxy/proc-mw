@@ -161,8 +161,11 @@ impl OpaqueChain {
     }
 
     /// 重试执行（语义原语，对齐 `chain::exec_retry`）：链失败（返回码 ≠0）时重试
-    /// 至多 `n` 次，成功立即返回。请求每次重试重新过链（无状态变换可安全重放）。
-    pub fn exec_retry<R, O>(
+    /// 至多 `n` 次，成功立即返回。
+    ///
+    /// **重试语义（重要）**：每次尝试从 `req` 的**原始状态克隆**重放——失败尝试对请求
+    /// 的变换不累积（非幂等中间件如 audit +1 不会因重试叠加）。成功后把结果状态写回。
+    pub fn exec_retry<R: Clone, O>(
         &self,
         core: impl Fn(&mut R) -> O,
         req: &mut R,
@@ -170,8 +173,12 @@ impl OpaqueChain {
     ) -> Result<O, i32> {
         let mut last_err = 0i32;
         for _ in 0..n {
-            match self.exec(&core, req) {
-                Ok(v) => return Ok(v),
+            let mut attempt = req.clone(); // 每次尝试从同一起点
+            match self.exec(&core, &mut attempt) {
+                Ok(v) => {
+                    *req = attempt;
+                    return Ok(v);
+                }
                 Err(e) => last_err = e,
             }
         }
