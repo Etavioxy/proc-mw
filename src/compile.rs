@@ -12,6 +12,9 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
+/// 全局构建锁：串行化插件 cargo 构建——共享 target-dir（依赖复用）安全，
+/// 并发构建排队不冲突（不同插件可并行编译的收益 < 共享依赖的收益）。
+static BUILD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// 编译中间件源码为 cdylib，返回 .so/.dylib 路径。
 /// `middleware_source` 须导出 `proc_mw_abi_version()` 与 `mw_enter`（+可选 `mw_exit`）。
@@ -51,9 +54,14 @@ pub fn build_plugin_with_deps(
     // 无依赖 → --offline（避免更新索引）；有依赖 → 在线（用 cargo 缓存/拉取）
     let mut cmd = Command::new("cargo");
     cmd.args(["build", "--release"]).current_dir(&crate_dir);
+    // 共享 target-dir：不同插件构建复用已编译依赖（bevy_ecs 等重依赖只编一次），
+    // 否则每个插件临时 crate 的 fresh target 会重编全部依赖（实测 16.3s → 秒级）
+    let shared_target = out_dir.join("proc_mw_plugin_target");
+    cmd.arg("--target-dir").arg(&shared_target);
     if deps.trim().is_empty() {
         cmd.arg("--offline");
     }
+    let _guard = BUILD_LOCK.lock().unwrap(); // 串行化：共享 target-dir 并发安全
     let out = match cmd.output() {
         Ok(o) => o,
         Err(e) => {
@@ -67,6 +75,7 @@ pub fn build_plugin_with_deps(
         let _ = fs::remove_dir_all(&crate_dir); // 编译失败清理临时目录（防泄漏）
         return Err(format!("编译失败：{} 条诊断\n{}", diags.len(), render_diags(&diags, middleware_source)));
     }
+    let _ = fs::remove_dir_all(&crate_dir); // 成功：临时 crate 冗余（.so 在共享 target），清理
 
     let ext = if cfg!(target_os = "macos") {
         "dylib"
@@ -75,7 +84,8 @@ pub fn build_plugin_with_deps(
     } else {
         "so"
     };
-    Ok(crate_dir.join("target/release").join(format!("lib{crate_name}.{ext}")))
+    // 产物在共享 target-dir（--target-dir），非 crate_dir/target/
+    Ok(shared_target.join("release").join(format!("lib{crate_name}.{ext}")))
 }
 
 /// 把**共享类型定义**注入插件源码（D6 工具链域，消除宿主/插件双写漂移）。
@@ -225,14 +235,8 @@ pub fn build_plugin_cached(
     // 同名目标 rename 是原子的（Unix 覆盖），多线程同源码 → 内容一致，后写覆盖
     fs::rename(&tmp, &cache_path).map_err(|e| format!("缓存原子化: {e}"))?;
 
-    // 资源管理：临时 crate 目录已冗余（产物已入缓存），清理防泄漏
-    if let Some(crate_dir) = so
-        .parent()
-        .and_then(|p| p.parent())
-        .and_then(|p| p.parent())
-    {
-        let _ = fs::remove_dir_all(crate_dir);
-    }
+    // 临时 crate 已由 build_plugin_with_deps 成功路径清理（.so 在共享 target，
+    // 不能从 .so 路径推导 crate_dir——会错删 out_dir/共享 target）
     Ok(cache_path)
 }
 
