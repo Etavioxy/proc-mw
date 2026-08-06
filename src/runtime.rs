@@ -166,6 +166,15 @@ impl PluginOpaque {
         unsafe { (self.enter)(req, resp) }
     }
 
+    /// 查询插件任意 `extern "C" fn() -> u64` 符号（观测插件内部状态/统计）。
+    /// 例：插件导出 `proc_mw_state_count()`，宿主经此读取其内部计数。
+    pub fn get_extra_symbol_u64(&self, name: &[u8]) -> Option<u64> {
+        unsafe {
+            let f = get_sym::<unsafe extern "C" fn() -> u64>(&*self._lib, name).ok()?;
+            Some((*f)())
+        }
+    }
+
     /// 加载 + 布局指纹校验（D7）：插件须导出 `proc_mw_layout_fingerprint() -> u64`
     /// 且与宿主期望一致（size<<32|align）。共享类型定义漂移 → 加载期硬失败，而非运行期 UB。
     pub fn load_with_layout(path: &str, expected_layout: u64) -> Result<Self, String> {

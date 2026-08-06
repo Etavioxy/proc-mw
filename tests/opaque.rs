@@ -286,6 +286,64 @@ pub struct Order { pub id: u64, pub qty: i64, pub hops: u32 }   // 与宿主布�
     assert_eq!(r, 9, "热替换后异步槽位换成同步插件仍生效");
 }
 
+// ===== 有状态插件热更边界：新 .dylib 状态归零，旧 .dylib 保活则状态独立 =====
+
+/// 插件内部静态计数跨热更的行为：热换到**新 .dylib** 时内部状态从零开始；
+/// 旧 .dylib 因 keepalive/句柄保活，其内部状态独立保留。
+/// → 设计原则：跨热更需保留的状态放**宿主 Stateful 节点**，插件应为无状态变换。
+#[test]
+fn stateful_plugin_state_resets_on_hot_swap() {
+    let src_v1 = r#"
+use std::sync::atomic::{AtomicU64, Ordering};
+static COUNT: AtomicU64 = AtomicU64::new(0);   // 插件内部状态
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(_req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    COUNT.fetch_add(1, Ordering::SeqCst);
+    0
+}
+#[no_mangle] pub extern "C" fn proc_mw_state_count() -> u64 { COUNT.load(Ordering::SeqCst) }
+"#;
+    // v2：行为可区别（每次 +2）→ 新源码 → 新 .dylib
+    let src_v2 = src_v1.replace(
+        "COUNT.fetch_add(1, Ordering::SeqCst);",
+        "COUNT.fetch_add(2, Ordering::SeqCst);",
+    );
+    let so1 = proc_mw::compile::build_plugin_cached("stateful_v1", src_v1, &std::env::temp_dir()).unwrap();
+    let so2 = proc_mw::compile::build_plugin_cached("stateful_v2", &src_v2, &std::env::temp_dir()).unwrap();
+    let p1 = proc_mw::runtime::PluginOpaque::load(so1.to_str().unwrap()).unwrap();
+    let p2 = proc_mw::runtime::PluginOpaque::load(so2.to_str().unwrap()).unwrap();
+
+    // v1 处理 5 次 → v1 内部状态累积到 5
+    let mut chain = OpaqueChain::new(vec![p1.to_node()]);
+    for _ in 0..5 {
+        let mut o = order(1, 10);
+        chain.exec(|o| o.qty, &mut o).unwrap();
+    }
+    assert_eq!(
+        p1.get_extra_symbol_u64(b"proc_mw_state_count"),
+        Some(5),
+        "v1 插件内部状态累积到 5"
+    );
+
+    // 热换 v2（新 .dylib）→ 处理 3 次 → v2 内部状态从 0 起（2×3=6）
+    assert!(chain.set(0, p2.to_node()));
+    for _ in 0..3 {
+        let mut o = order(1, 10);
+        chain.exec(|o| o.qty, &mut o).unwrap();
+    }
+    assert_eq!(
+        p2.get_extra_symbol_u64(b"proc_mw_state_count"),
+        Some(6),
+        "v2 是全新 .dylib，内部状态从零累积（2×3）"
+    );
+    // 旧 v1 的 .dylib 保活（p1 句柄在）→ v1 状态独立保留
+    assert_eq!(
+        p1.get_extra_symbol_u64(b"proc_mw_state_count"),
+        Some(5),
+        "v1 旧 .dylib 保活，内部状态独立保留（永不 unload）"
+    );
+}
+
 // ===== 交叉确认：Ctx 链 = OpaqueChain 的 R=Ctx 特化（消灭"两条并行链"）=====
 
 /// i32 时代的 `Ctx { input, output, trace_id }` 作为**共享类型**走 OpaqueChain：
