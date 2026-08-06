@@ -344,6 +344,56 @@ static COUNT: AtomicU64 = AtomicU64::new(0);   // 插件内部状态
     );
 }
 
+// ===== 任意 repr(C)/POD 类型沙箱（字节编组）+ 崩溃隔离（D7 推边）=====
+
+#[test]
+fn sandbox_byte_marshalling_for_repr_c_type() {
+    // repr(C) 插件（Order 变换）经子进程字节编组运行——任意类型沙箱
+    let src = r#"
+#[repr(C)]
+pub struct Order { pub id: u64, pub qty: i64, pub hops: u32 }
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    let o = unsafe { &mut *(req as *mut Order) };
+    o.qty -= 1;
+    o.hops += 1;
+    0
+}
+"#;
+    let so = proc_mw::compile::build_plugin_cached("sandbox_order", src, &std::env::temp_dir()).unwrap();
+    let exec = std::path::Path::new(env!("CARGO_BIN_EXE_mw_exec"));
+    let sb = proc_mw::sandbox::Sandbox::spawn_bytes(exec, &so).expect("spawn 字节沙箱");
+    // 原始字节编组 Order{id:1, qty:10, hops:0} → 子进程变换 → 回传
+    let mut o = order(1, 10);
+    let bytes: &[u8] = unsafe {
+        std::slice::from_raw_parts((&o as *const Order) as *const u8, std::mem::size_of::<Order>())
+    };
+    let out = sb.run_bytes(bytes).expect("沙箱处理");
+    let o2: Order = unsafe { std::ptr::read(out.as_ptr() as *const Order) };
+    assert_eq!(o2.qty, 9, "子进程内插件 qty-1");
+    assert_eq!(o2.hops, 1);
+    assert_eq!(o2.id, 1);
+}
+
+#[test]
+fn sandbox_crash_isolation_for_panicking_plugin() {
+    // 插件 panic（L3：extern C panic = 进程 abort）→ 只杀子进程，宿主存活
+    let src = r#"
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(_req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    panic!("沙箱插件故意崩溃");
+}
+"#;
+    let so = proc_mw::compile::build_plugin_cached("sandbox_panic", src, &std::env::temp_dir()).unwrap();
+    let exec = std::path::Path::new(env!("CARGO_BIN_EXE_mw_exec"));
+    let sb = proc_mw::sandbox::Sandbox::spawn_bytes(exec, &so).expect("spawn 字节沙箱");
+    let r = sb.run_bytes(&[0u8; 24]); // 触发插件 panic
+    assert!(r.is_err(), "崩溃必须被检测（EOF）");
+    assert!(sb.run_bytes(&[0u8; 24]).is_err(), "崩溃后需重启");
+    sb.restart().expect("重启沙箱不炸宿主");
+    assert!(sb.run_bytes(&[0u8; 24]).is_err(), "重启后同插件仍崩，但宿主一直存活");
+}
+
 // ===== 交叉确认：Ctx 链 = OpaqueChain 的 R=Ctx 特化（消灭"两条并行链"）=====
 
 /// i32 时代的 `Ctx { input, output, trace_id }` 作为**共享类型**走 OpaqueChain：
