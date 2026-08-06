@@ -10,6 +10,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 
+/// 沙箱协议版本（宿主与 mw_exec 握手；不匹配快速失败而非静默挂起）
+pub const SANDBOX_PROTOCOL_VERSION: u8 = 1;
+pub const SANDBOX_MAGIC: u8 = 0xA1;
+pub const SANDBOX_ACK: u8 = 0xB2;
+
 struct SandboxInner {
     child: Child,
     stdin: ChildStdin,
@@ -43,7 +48,9 @@ impl Sandbox {
         })
     }
 
-    /// 启动字节编组沙箱（`mw_exec --bytes`）：任意 repr(C)/POD 类型经 `run_bytes` 运行
+    /// 启动字节编组沙箱（`mw_exec --bytes`）：任意 repr(C)/POD 类型经 `run_bytes` 运行。
+    /// **协议握手**：发 `[0xA1, VERSION, \n]`，等 ACK `[0xB2]`——不匹配快速失败
+    /// （旧 mw_exec / 无 --bytes → 明确报错，而非静默挂起）。
     pub fn spawn_bytes(exec_path: &Path, plugin_path: &Path) -> Result<Self, String> {
         let mut child = Command::new(exec_path)
             .arg(plugin_path)
@@ -52,8 +59,23 @@ impl Sandbox {
             .stdout(Stdio::piped())
             .spawn()
             .map_err(|e| format!("spawn mw_exec --bytes: {e}"))?;
-        let stdin = child.stdin.take().ok_or("取 stdin 失败")?;
-        let stdout = BufReader::new(child.stdout.take().ok_or("取 stdout 失败")?);
+        let mut stdin = child.stdin.take().ok_or("取 stdin 失败")?;
+        let mut stdout = BufReader::new(child.stdout.take().ok_or("取 stdout 失败")?);
+        // 版本握手
+        stdin
+            .write_all(&[SANDBOX_MAGIC, SANDBOX_PROTOCOL_VERSION, b'\n'])
+            .map_err(|e| format!("握手写入: {e}"))?;
+        stdin.flush().map_err(|e| format!("握手 flush: {e}"))?;
+        let mut ack = [0u8; 1];
+        stdout
+            .read_exact(&mut ack)
+            .map_err(|_| "沙箱协议握手失败（无 ACK，mw_exec 可能崩溃/非字节模式）".to_string())?;
+        if ack[0] != SANDBOX_ACK {
+            return Err(format!(
+                "沙箱协议不匹配：mw_exec 旧版或无 --bytes（ACK 0x{:02x} ≠ 期望 0x{:02x}），请重建 mw_exec",
+                ack[0], SANDBOX_ACK
+            ));
+        }
         Ok(Sandbox {
             inner: Mutex::new(SandboxInner { child, stdin, stdout }),
             exec_path: exec_path.to_path_buf(),

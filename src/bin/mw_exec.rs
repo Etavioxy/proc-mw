@@ -50,6 +50,8 @@ fn text_mode(plugin_path: &str) {
     }
 }
 
+use proc_mw::sandbox::{SANDBOX_ACK, SANDBOX_MAGIC, SANDBOX_PROTOCOL_VERSION};
+
 /// 字节编组协议（任意 repr(C)/POD 类型沙箱）
 fn byte_mode(plugin_path: &str) {
     let plugin = PluginOpaque::load(plugin_path).expect("加载插件");
@@ -57,6 +59,20 @@ fn byte_mode(plugin_path: &str) {
     let mut stdin = stdin.lock();
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
+
+    // 版本握手：宿主发 [0xA1, VERSION, 0x0A]；magic 匹配则回 ACK，否则按文本协议处理（快速失败）
+    let mut hs = [0u8; 3];
+    if stdin.read_exact(&mut hs).is_ok()
+        && hs[0] == SANDBOX_MAGIC
+        && hs[1] == SANDBOX_PROTOCOL_VERSION
+    {
+        let _ = stdout.write_all(&[SANDBOX_ACK]);
+        let _ = stdout.flush();
+    } else {
+        eprintln!("沙箱协议版本不匹配或非字节模式调用");
+        std::process::exit(1); // 快速失败，宿主可检测（而非挂起）
+    }
+
     let mut len_buf = [0u8; 4];
     loop {
         // 读请求长度（EOF → 结束）
