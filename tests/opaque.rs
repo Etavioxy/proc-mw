@@ -520,6 +520,24 @@ fn async_opaque_exec_retry_timeout() {
     assert_eq!(o.hops, 1, "只有成功尝试变换（克隆重放）");
 }
 
+// ===== async 可失败核心（对齐 sync exec_fallible）=====
+
+#[test]
+fn async_opaque_exec_fallible() {
+    use proc_mw::opaque::FallibleError;
+    let chain = OpaqueAsyncChain::empty();
+    let mut o = order(1, 100);
+    let r = futures::executor::block_on(chain.exec_fallible(|o| -> Result<i64, &'static str> {
+        if o.qty > 50 { Err("core: too big") } else { Ok(o.qty) }
+    }, &mut o));
+    assert_eq!(r, Err(FallibleError::Core("core: too big")), "async 核心失败域");
+    let mut ok = order(1, 10);
+    let r2 = futures::executor::block_on(chain.exec_fallible(|o| -> Result<i64, &'static str> {
+        Ok(o.qty)
+    }, &mut ok));
+    assert_eq!(r2, Ok(10), "async 核心成功");
+}
+
 // ===== async 链配置驱动（与 sync build_opaque_chain 对称）=====
 
 #[test]

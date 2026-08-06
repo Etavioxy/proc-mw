@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use crate::opaque::{HasDeadline, HasTrace, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
+use crate::opaque::{FallibleError, HasDeadline, HasTrace, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
 
 /// 异步超时错误：链失败（返回码）或超时（挂起 future 被取消）
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,6 +145,19 @@ impl OpaqueAsyncChain {
             }
         }
         Ok(out)
+    }
+
+    /// 异步可失败核心（对齐 sync `exec_fallible`）：核心 Result 与链返回码分域。
+    pub async fn exec_fallible<R: Send, O, E>(
+        &self,
+        core: impl Fn(&mut R) -> Result<O, E> + Send + Sync,
+        req: &mut R,
+    ) -> Result<O, FallibleError<E>> {
+        match self.exec(core, req).await {
+            Ok(Ok(o)) => Ok(o),
+            Ok(Err(e)) => Err(FallibleError::Core(e)),
+            Err(code) => Err(FallibleError::Chain(code)),
+        }
     }
 
     /// 异步并行执行（对齐 sync `exec_parallel`）：每请求一线程 block_on async exec。
