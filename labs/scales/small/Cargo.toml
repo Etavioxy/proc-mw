@@ -1,0 +1,9 @@
+[package]
+name = "small_service"
+version = "0.1.0"
+edition = "2021"
+description = "小型档·真实软件 flume：中间热更连接测试（消息经可热更中间件链进通道）"
+
+[dependencies]
+flume = "0.11"
+proc-mw = { path = "../../..", features = ["runtime"] }
