@@ -6,3 +6,4 @@ labs/d5_incremental/target/
 labs/d5_incremental/**/src/gen/
 labs/scales/medium/src/gen.rs
 labs/scales/large/src/gen.rs
+labs/scales/**/target/
