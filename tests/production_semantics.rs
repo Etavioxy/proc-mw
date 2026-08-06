@@ -2,6 +2,8 @@
 //!
 //! 这是中间层本体的核心语义场景——不是维度验收，而是"中间件到底能做到什么"。
 
+use std::sync::Arc;
+
 use proc_mw::chain::Chain;
 use proc_mw::dispatch::{chain_exec, Builtin, Ctx, Flow, Mw, MwError, Node};
 
@@ -63,11 +65,6 @@ impl Mw for LogMw {
         Ok(Flow::Continue)
     }
     fn exit(&self, _ctx: &mut Ctx) {}
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(LogMw {
-            _tag: self._tag,
-        })
-    }
 }
 
 fn assert_send_sync<T: Send + Sync>() {}
@@ -76,7 +73,7 @@ fn assert_send_sync<T: Send + Sync>() {}
 fn chain_is_send_sync() {
     assert_send_sync::<Chain>();
     assert_send_sync::<Node>();
-    assert_send_sync::<Box<dyn Mw>>();
+    assert_send_sync::<Arc<dyn Mw>>();
 }
 
 /// 场景 5：链可复用于任意核心（核心由调用方注入）

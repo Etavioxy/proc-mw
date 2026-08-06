@@ -17,9 +17,6 @@ impl Mw for AddMw {
         Ok(Flow::Continue)
     }
     fn exit(&self, _ctx: &mut Ctx) {}
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(AddMw)
-    }
 }
 #[derive(Clone, Copy)]
 struct CapMw;
@@ -35,9 +32,6 @@ impl Mw for CapMw {
         if ctx.output > 50 {
             ctx.output = 50;
         }
-    }
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(CapMw)
     }
 }
 

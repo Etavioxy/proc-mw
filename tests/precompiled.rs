@@ -11,9 +11,6 @@ impl Mw for AddMw {
         Ok(Flow::Continue)
     }
     fn exit(&self, _ctx: &mut Ctx) {}
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(AddMw)
-    }
 }
 #[derive(Clone, Copy)]
 struct CapMw;
@@ -29,9 +26,6 @@ impl Mw for CapMw {
             ctx.output = 50;
         }
     }
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(CapMw)
-    }
 }
 #[derive(Clone, Copy)]
 struct RejectNeg;
@@ -44,9 +38,6 @@ impl Mw for RejectNeg {
         }
     }
     fn exit(&self, _ctx: &mut Ctx) {}
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(RejectNeg)
-    }
 }
 
 fn core(ctx: &mut Ctx) -> Result<i32, MwError> {

@@ -16,9 +16,6 @@ impl Mw for ZstMw {
         Ok(Flow::Continue)
     }
     fn exit(&self, _ctx: &mut Ctx) {}
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(ZstMw)
-    }
 }
 
 #[test]
@@ -36,9 +33,6 @@ impl Mw for OffsetMw {
         Ok(Flow::Continue)
     }
     fn exit(&self, _ctx: &mut Ctx) {}
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(OffsetMw { n: self.n })
-    }
 }
 
 #[test]
@@ -62,11 +56,6 @@ impl Mw for BoxedMw {
         Ok(Flow::Continue)
     }
     fn exit(&self, _ctx: &mut Ctx) {}
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(BoxedMw {
-            data: self.data.clone(),
-        })
-    }
 }
 
 #[test]
@@ -95,11 +84,6 @@ impl Mw for ArcMw {
         Ok(Flow::Continue)
     }
     fn exit(&self, _ctx: &mut Ctx) {}
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(ArcMw {
-            counter: Arc::clone(&self.counter),
-        })
-    }
 }
 
 #[test]
@@ -132,9 +116,6 @@ impl Mw for PolicyMw {
         }
     }
     fn exit(&self, _ctx: &mut Ctx) {}
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(*self)
-    }
 }
 
 #[test]

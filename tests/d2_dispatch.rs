@@ -50,11 +50,6 @@ impl Mw for LogMw {
     fn exit(&self, ctx: &mut Ctx) {
         ctx.output += 100; // 观测后改写输出
     }
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(LogMw {
-            _tag: self._tag,
-        })
-    }
 }
 
 #[test]
@@ -62,7 +57,7 @@ fn dyn_slot_works() {
     // Dyn(LogMw: exit 输出+100) + Builtin(Add(1))
     // enter: 1→2 → core 3 → exit 逆序：Add(1) 无退出 → LogMw 输出+100=103
     let nodes: Vec<Node> = vec![
-        Node::Dyn(Box::new(LogMw { _tag: "t" })),
+        Node::Dyn(Arc::new(LogMw { _tag: "t" })),
         Node::Builtin(Builtin::Add(1)),
     ];
     assert_eq!(chain_exec(&nodes, core_add1, 1).unwrap(), 103);
@@ -125,7 +120,7 @@ fn slot_sizes() {
         8,
         "FnPtr：Rust fn thin 8B"
     );
-    assert_eq!(std::mem::size_of::<Box<dyn Mw>>(), 16, "Dyn：fat 16B");
+    assert_eq!(std::mem::size_of::<Arc<dyn Mw>>(), 16, "Dyn：fat 16B");
     assert_eq!(
         std::mem::size_of::<Builtin>(),
         16,

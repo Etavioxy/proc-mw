@@ -50,11 +50,4 @@ impl Mw for RateLimiter {
 
     fn exit(&self, _ctx: &mut Ctx) {}
 
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(RateLimiter {
-            limit: self.limit,
-            window: self.window,
-            state: Arc::clone(&self.state),
-        })
-    }
 }

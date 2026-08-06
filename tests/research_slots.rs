@@ -132,9 +132,6 @@ impl Mw for AddMw {
         Ok(Flow::Continue)
     }
     fn exit(&self, _ctx: &mut Ctx) {}
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(AddMw)
-    }
 }
 struct CapMw;
 impl Mw for CapMw {
@@ -145,9 +142,6 @@ impl Mw for CapMw {
         Ok(Flow::Continue)
     }
     fn exit(&self, _ctx: &mut Ctx) {}
-    fn box_clone(&self) -> Box<dyn Mw> {
-        Box::new(CapMw)
-    }
 }
 
 chain_fn!(chain_standard, [AddMw, CapMw]);

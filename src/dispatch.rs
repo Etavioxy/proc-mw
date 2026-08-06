@@ -76,12 +76,11 @@ impl fmt::Display for MwError {
 }
 
 /// 中间件契约：进入可短路可报错；退出观测/改写输出。
-/// `box_clone` 是"可克隆 trait 对象"模式——D3 RCU 快照需要克隆节点，
-/// 而 `Box<dyn Mw>` 无法 derive(Clone)，故开放槽位的中间件必须提供克隆契约。
+/// 开放槽位用 `Arc<dyn Mw>`（可克隆，RCU 快照克隆节点 = Arc 引用计数）——
+/// 无需 box_clone 契约（L2 换存储模型消除）。
 pub trait Mw: Send + Sync {
     fn enter(&self, ctx: &mut Ctx) -> Result<Flow, MwError>;
     fn exit(&self, ctx: &mut Ctx);
-    fn box_clone(&self) -> Box<dyn Mw>;
 }
 
 /// 封闭世界内建中间件（有状态内联，D2 槽位 A）
@@ -120,7 +119,7 @@ pub enum Node {
     Builtin(Builtin),                              // 槽位 A：封闭·有状态 → 内联
     FnPtr(fn(&mut Ctx) -> Result<Flow, MwError>), // 槽位 B：无状态 Rust fn → thin 指针
     Extern(ExternNode),                           // 槽位 D：运行期加载无状态 → thin extern C fn
-    Dyn(Box<dyn Mw>),                             // 槽位 C：开放·有状态 → fat 指针
+    Dyn(Arc<dyn Mw>),                             // 槽位 C：开放·有状态 → fat 指针（Arc 可克隆）
 }
 
 impl Clone for Node {
@@ -129,7 +128,7 @@ impl Clone for Node {
             Node::Builtin(b) => Node::Builtin(*b),
             Node::FnPtr(f) => Node::FnPtr(*f),
             Node::Extern(e) => Node::Extern(e.clone()),
-            Node::Dyn(d) => Node::Dyn(d.box_clone()),
+            Node::Dyn(d) => Node::Dyn(Arc::clone(d)),
         }
     }
 }

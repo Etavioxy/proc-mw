@@ -12,13 +12,13 @@
 - **裁定**：**严格"空链透明"只属于 Release；Debug 以"有界"为验收**（30ns 阈值）。接受"有界"是正确定案——开销是 Debug 构建特性，非设计缺陷，设计绕过（换 API 形状）收益甚微。
 - **影响维度**：D4；也提醒 D1"Release 零成本"的严格形式同样只属于 Release。
 
-## L2 · D3 快照克隆 × D2 开放槽位 → box_clone 契约
+## L2 · D3 快照克隆 × D2 开放槽位 → 已换存储模型消除（不再需要 box_clone）
 
 - **现象**：`Box<dyn Mw>` 无法 `derive(Clone)`，但 RCU 快照 add/remove 需克隆整链。
-- **尝试过的迭代**：`derive(Clone)` 直接失败 → 引入 `box_clone` 模式（Mw trait 加 `fn box_clone(&self) -> Box<dyn Mw>`）。
-- **代价**：每个开放世界中间件必须实现克隆契约（多一份样板）；闭合世界的 Builtin 仍是廉价 Copy。
-- **裁定**：**接受**。开放世界的"可克隆"是快照模型的必要成本；box_clone 是标准 trait-object 克隆模式。
-- **影响维度**：D3 × D2（交叉约束）。
+- **解决（换存储模型）**：开放槽位从 `Dyn(Box<dyn Mw>)` 改为 `Dyn(Arc<dyn Mw>)`——**Arc 可克隆（引用计数），Node 自动 Clone，Mw trait 不再需要 box_clone 契约**。尺寸不变（均 16B fat 指针）。
+- **成本**：Arc 原子引用计数（仅在 RCU 写路径克隆时发生，读路径无影响）；中间件构造包一层 Arc::new。
+- **裁定**：**L2 已消除**——中间件作者不再需要实现克隆契约，trait 更简洁。
+- **影响维度**：D3 × D2（交叉约束）已闭环。
 
 ## L3 · panic 跨 extern "C" 边界 = 进程 abort，catch_unwind 无效
 
