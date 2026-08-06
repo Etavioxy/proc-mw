@@ -5,4 +5,5 @@ edition = "2021"
 description = "三档体量测试·大型：生成 ~万 LOC 多模块服务用 proc-mw 方法"
 
 [dependencies]
+bevy_ecs = "0.16"
 proc-mw = { path = "../../..", features = ["runtime"] }
