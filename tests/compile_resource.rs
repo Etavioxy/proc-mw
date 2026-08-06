@@ -29,6 +29,20 @@ fn temp_crates_cleaned_after_cache() {
 }
 
 #[test]
+fn temp_crates_cleaned_on_failure() {
+    // 失败路径：编译错误也应清理临时 crate（防泄漏）
+    let out_dir = std::env::temp_dir().join(format!("proc_mw_res_fail_{}", std::process::id()));
+    let bad_src = "fn not_plugin() { let x: i32 = \"str\"; }"; // 编译错误
+    let r = build_plugin_cached("fail_test", bad_src, &out_dir);
+    assert!(r.is_err(), "坏源码必须编译失败");
+    let leaked = std::fs::read_dir(&out_dir)
+        .unwrap()
+        .filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().starts_with("fail_test_"))
+        .count();
+    assert_eq!(leaked, 0, "失败路径临时 crate 应清理，泄漏 {leaked} 个");
+}
+
+#[test]
 fn cache_cleanup_evicts_to_budget() {
     let out_dir = std::env::temp_dir().join(format!("proc_mw_res_clean_{}", std::process::id()));
     for i in 0..3 {

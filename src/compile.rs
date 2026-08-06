@@ -31,14 +31,21 @@ pub fn build_plugin(name: &str, middleware_source: &str, out_dir: &Path) -> Resu
     fs::write(crate_dir.join("src/lib.rs"), middleware_source).map_err(|e| format!("写 lib.rs: {e}"))?;
 
     // --offline：临时 crate 无依赖，避免更新索引
-    let out = Command::new("cargo")
+    let out = match Command::new("cargo")
         .args(["build", "--release", "--offline"])
         .current_dir(&crate_dir)
         .output()
-        .map_err(|e| format!("cargo 不可用: {e}"))?;
+    {
+        Ok(o) => o,
+        Err(e) => {
+            let _ = fs::remove_dir_all(&crate_dir); // 失败也清理临时目录（防泄漏）
+            return Err(format!("cargo 不可用: {e}"));
+        }
+    };
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
         let diags = extract_diagnostics(&stderr);
+        let _ = fs::remove_dir_all(&crate_dir); // 编译失败清理临时目录（防泄漏）
         return Err(format!("编译失败：{} 条诊断\n{}", diags.len(), render_diags(&diags, middleware_source)));
     }
 
