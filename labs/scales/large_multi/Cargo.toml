@@ -1,0 +1,3 @@
+[workspace]
+members = ["domains/*", "app"]
+resolver = "2"

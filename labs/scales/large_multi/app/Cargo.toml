@@ -1,0 +1,17 @@
+[package]
+name = "large_app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+proc-mw = { path = "../../../..", features = ["runtime"] }
+domain_0 = { path = "../domains/domain_0" }
+domain_1 = { path = "../domains/domain_1" }
+domain_2 = { path = "../domains/domain_2" }
+domain_3 = { path = "../domains/domain_3" }
+domain_4 = { path = "../domains/domain_4" }
+domain_5 = { path = "../domains/domain_5" }
+domain_6 = { path = "../domains/domain_6" }
+domain_7 = { path = "../domains/domain_7" }
+domain_8 = { path = "../domains/domain_8" }
+domain_9 = { path = "../domains/domain_9" }

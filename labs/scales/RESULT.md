@@ -43,3 +43,12 @@ proc-mw 方法在 ~200 到 ~55k LOC 三档下行为一致：吞吐恒定、观�
 | 改单个 handler 逻辑 | 1.88s |
 
 **发现**：单 crate 内任一改动触发全量增量重编 ~1.88s（比干净 4.76s 快 2.5×）。印证 D5"同 crate 粗失效"——中间件已独立 crate（proc-mw），中间件改动增量 Θ(1)；handler 同 crate 则 ~1.9s。**按域拆 crate 可将 handler 改动降到 Θ(1)**（D8 迁移工具的多文件按域即此方向）。
+
+## 按域拆 crate（large_multi，D5 缓解落地）
+
+| 结构 | 改单 handler 增量重编 |
+|---|---|
+| 单 crate（55k LOC） | 1.88s（全量） |
+| **多 crate（10 领域）** | **0.186s**（只该领域 + app，其余 9 领域 Fresh） |
+
+**10× 改善** at 55k LOC：改 domain_3 只重编 domain_3 + large_app。**"按域拆 crate"是大型系统的增量关键**——D5 缓解在规模下实证。
