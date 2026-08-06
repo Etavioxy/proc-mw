@@ -520,6 +520,19 @@ fn async_opaque_exec_retry_timeout() {
     assert_eq!(o.hops, 1, "只有成功尝试变换（克隆重放）");
 }
 
+// ===== async exec_parallel（对齐 sync：多请求并行 async 执行）=====
+
+#[test]
+fn async_opaque_exec_parallel() {
+    let chain = OpaqueAsyncChain::new(vec![OpaqueAsyncNode::Sync(OpaqueNode::Stateful(Arc::new(
+        OpaqueMetrics::new(),
+    )))]);
+    let reqs: Vec<Order> = (0..4).map(|i| order(i, 100)).collect();
+    let results = chain.exec_parallel(|o| o.qty, reqs);
+    assert_eq!(results.len(), 4, "4 请求并行");
+    assert!(results.iter().all(|r| *r == Ok(100)), "并行各执行成功");
+}
+
 // ===== async exec_or（对齐 sync：拒绝时降级 fallback）=====
 
 #[test]

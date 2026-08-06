@@ -147,6 +147,28 @@ impl OpaqueAsyncChain {
         Ok(out)
     }
 
+    /// 异步并行执行（对齐 sync `exec_parallel`）：每请求一线程 block_on async exec。
+    /// async 链语义原语与 sync 全对齐（exec/retry/catch/timeout/or/parallel）。
+    pub fn exec_parallel<R: Send, O: Send>(
+        &self,
+        core: impl Fn(&mut R) -> O + Send + Sync,
+        reqs: Vec<R>,
+    ) -> Vec<Result<O, i32>> {
+        std::thread::scope(|s| {
+            let core_ref = &core;
+            let handles: Vec<_> = reqs
+                .into_iter()
+                .map(|mut req| {
+                    s.spawn(move || futures::executor::block_on(self.exec(core_ref, &mut req)))
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap_or(Err(OPAQUE_REJECT)))
+                .collect()
+        })
+    }
+
     /// 异步降级执行（对齐 sync `exec_or`）：链拒绝（返回码）时走 fallback（恢复/降级）。
     /// async 链语义原语完整（exec/retry/catch/timeout/or）。
     pub async fn exec_or<R: Send, O>(
