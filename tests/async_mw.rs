@@ -86,6 +86,8 @@ fn async_core_panic_caught() {
 }
 
 static ACALLS: AtomicUsize = AtomicUsize::new(0);
+/// 串行化：两个 retry 测试共享 ACALLS 全局，并行执行会互扰（真实竞态修复）
+static RETRY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// 前 1 次失败，之后成功
 fn flaky_async_core(ctx: &mut Ctx) -> Result<i32, MwError> {
@@ -99,6 +101,7 @@ fn flaky_async_core(ctx: &mut Ctx) -> Result<i32, MwError> {
 
 #[test]
 fn async_retry_succeeds_after_transient() {
+    let _guard = RETRY_LOCK.lock().unwrap();
     ACALLS.store(0, Ordering::SeqCst);
     let chain = AsyncChain::new(vec![Arc::new(AsyncAdd { n: 1 }) as Arc<dyn AsyncMw>]);
     let r = futures::executor::block_on(chain.exec_retry(flaky_async_core, 5, 3)).unwrap();
@@ -147,6 +150,7 @@ fn async_exit_hook_runs_after_core() {
 
 #[test]
 fn async_retry_exhausts() {
+    let _guard = RETRY_LOCK.lock().unwrap();
     ACALLS.store(0, Ordering::SeqCst);
     let chain = AsyncChain::new(vec![Arc::new(AsyncAdd { n: 1 }) as Arc<dyn AsyncMw>]);
     let r = futures::executor::block_on(chain.exec_retry(flaky_async_core, 5, 1));

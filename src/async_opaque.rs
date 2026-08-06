@@ -117,10 +117,10 @@ impl OpaqueAsyncChain {
     /// 异步执行：sync 节点同步调（含运行期编译插件），async 节点真实 await；
     /// 核心后 exit 逆序洋葱（sync 的 exit/stateful exit/async exit）。
     /// `R: Send`：exec 返回的 future 可 Send（可跨线程 / boxed / select 竞速）。
-    pub async fn exec<R: Send, O>(&self, core: fn(&mut R) -> O, req: &mut R) -> Result<O, i32> {
+    pub async fn exec<R: Send, O>(&self, core: impl Fn(&mut R) -> O + Send, req: &mut R) -> Result<O, i32> {
         let nodes = self.nodes.as_ref();
         let addr = req as *mut R as usize; // 捕获 usize（Send）；&mut R 的地址在 exec 全程有效
-        let mut p = || addr as *mut std::ffi::c_void; // 每次使用处转指针，避免跨 await 持有裸指针
+        let p = || addr as *mut std::ffi::c_void; // 每次使用处转指针，避免跨 await 持有裸指针
         for n in nodes.iter() {
             let code = match n {
                 OpaqueAsyncNode::Sync(sn) => match sn {
@@ -150,9 +150,10 @@ impl OpaqueAsyncChain {
     /// 异步超时执行：`select` 竞速 `exec` 与计时器——超时则**取消挂起的执行**
     /// （drop 未完成 future 即取消，Rust future 语义）。挂死 async 中间件可被终止，
     /// 这是同步 DeadlineCheck（仅预检）做不到的。
+    /// `core` 为闭包（可捕获状态，与 `exec` 一致）；须 `Send`（async 块捕获）。
     pub async fn exec_timeout<R: Send, O>(
         &self,
-        core: fn(&mut R) -> O,
+        core: impl Fn(&mut R) -> O + Send,
         req: &mut R,
         dur: Duration,
     ) -> Result<O, AsyncTimeoutError> {
