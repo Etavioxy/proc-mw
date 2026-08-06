@@ -8,8 +8,8 @@
 - **现象**：生产形状（Ctx + Result + 循环）空链在 Debug（opt-level=0）18.5ns vs 裸调用 7.8ns（+10.8ns）；Release 折叠到 0.001ns。
 - **证据**：`cargo run --example d4_bench`（Debug vs Release）实测。
 - **尝试过的迭代**：对 `chain_exec`/`Chain::exec` 加 `#[inline(always)]` → **无效**（Debug 仍 +10.85ns）。因为开销来自 `Ctx` 结构体初始化、`Result` 枚举判别、错误分支的**指令本身**，不是调用帧。
-- **根因**：生产形状的 API 契约（上下文 + 错误）强制空链也走 Ctx/Result 机制——Debug 未优化下这是固有指令。
-- **裁定**：**严格"空链透明"只属于 Release；Debug 以"有界"为验收**（30ns 阈值）。除非换 API 形状（如无中间件时直调核心的快路径，但会割裂契约），否则无法消除。
+- **根因（细化，见 examples/d4_debug_breakdown）**：分解 Debug 空链 10.8ns 开销 = **Ctx/Result/核心仅 ~2.5ns，框架循环/调用 ~14ns**。后者是 Debug 对框架函数调用与核心闭包的非优化指令序列（inline(always) 全栈只省 ~3.5ns）。**开销源于 Debug 构建的优化级别，不是中间件设计**——Release 下空链 0.001ns 完美。
+- **裁定**：**严格"空链透明"只属于 Release；Debug 以"有界"为验收**（30ns 阈值）。接受"有界"是正确定案——开销是 Debug 构建特性，非设计缺陷，设计绕过（换 API 形状）收益甚微。
 - **影响维度**：D4；也提醒 D1"Release 零成本"的严格形式同样只属于 Release。
 
 ## L2 · D3 快照克隆 × D2 开放槽位 → box_clone 契约
