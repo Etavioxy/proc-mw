@@ -252,6 +252,27 @@ static COUNT: AtomicU64 = AtomicU64::new(0);
     );
 }
 
+// ===== exec_catch（panic 兜底，对齐 Ctx 链的语义原语）=====
+
+struct PanicMw;
+impl OpaqueMw for PanicMw {
+    fn enter(&self, _req: *mut std::ffi::c_void) -> i32 {
+        panic!("宿主中间件 panic");
+    }
+}
+
+#[test]
+fn opaque_exec_catch_recovers_host_middleware_panic() {
+    let chain = OpaqueChain::new(vec![OpaqueNode::Stateful(Arc::new(PanicMw)), node(discount)]);
+    let mut o = order(1, 10);
+    let r = chain.exec_catch(|o| o.qty, &mut o);
+    assert_eq!(r, Err(OPAQUE_REJECT), "宿主中间件 panic 被兜住（不崩溃）");
+    // 兜住后链可复用
+    let chain2 = OpaqueChain::new(vec![node(discount)]);
+    let mut o2 = order(1, 10);
+    assert_eq!(chain2.exec_catch(|o| o.qty, &mut o2).unwrap(), 9);
+}
+
 // ===== 跨切 deadline（HasDeadline trait 复用机制，免每场景手写）=====
 
 struct DeadlineReq {

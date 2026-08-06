@@ -188,6 +188,15 @@ impl OpaqueChain {
         self.exec(core, req)
     }
 
+    /// panic 兜底执行（语义原语，对齐 `chain::exec_catch`）：宿主侧中间件/核心
+    /// panic 被 `catch_unwind` 兜住 → 返回码 2（拒绝），不崩溃。
+    /// 边界（L3）：运行期编译插件经 extern "C" panic = abort，`catch_unwind` 无效——
+    /// 只兜**宿主侧**中间件（OpaqueMw 实现）与核心。
+    pub fn exec_catch<R, O>(&self, core: impl Fn(&mut R) -> O, req: &mut R) -> Result<O, i32> {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.exec(core, req)))
+            .unwrap_or_else(|_| Err(OPAQUE_REJECT))
+    }
+
     /// 重试执行（语义原语，对齐 `chain::exec_retry`）：链失败（返回码 ≠0）时重试
     /// 至多 `n` 次，成功立即返回。
     ///
