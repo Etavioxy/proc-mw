@@ -89,6 +89,11 @@ impl Plugin {
     }
 }
 
+/// 共享类型布局指纹（D7）：`size<<32 | align`。宿主用它校验插件共享类型布局一致。
+pub fn layout_fingerprint<T>() -> u64 {
+    (std::mem::size_of::<T>() as u64) << 32 | (std::mem::align_of::<T>() as u64)
+}
+
 /// 类型无关插件加载器（核心目的：编译任意 Rust 代码粘合进中间层，L7）
 ///
 /// ABI 用 `*mut c_void`（类型擦除指针）——插件在共享类型定义上编译，
@@ -140,6 +145,24 @@ impl PluginOpaque {
     /// 调用插件的 enter（宿主侧 downcast 由插件契约决定）
     pub unsafe fn call(&self, req: *mut std::ffi::c_void, resp: *mut std::ffi::c_void) -> i32 {
         unsafe { (self.enter)(req, resp) }
+    }
+
+    /// 加载 + 布局指纹校验（D7）：插件须导出 `proc_mw_layout_fingerprint() -> u64`
+    /// 且与宿主期望一致（size<<32|align）。共享类型定义漂移 → 加载期硬失败，而非运行期 UB。
+    pub fn load_with_layout(path: &str, expected_layout: u64) -> Result<Self, String> {
+        let p = Self::load(path)?;
+        unsafe {
+            let fp_fn =
+                *get_sym::<unsafe extern "C" fn() -> u64>(&*p._lib, b"proc_mw_layout_fingerprint")
+                    .map_err(|_| "缺 proc_mw_layout_fingerprint 符号".to_string())?;
+            let fp = fp_fn();
+            if fp != expected_layout {
+                return Err(format!(
+                    "共享类型布局指纹不匹配：插件 {fp:#x} ≠ 宿主 {expected_layout:#x}（类型定义漂移）"
+                ));
+            }
+        }
+        Ok(p)
     }
 
     /// 产出类型无关链节点（`opaque::OpaqueNode::Thin`）——把运行期编译的**任意类型**

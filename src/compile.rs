@@ -59,6 +59,22 @@ pub fn build_plugin(name: &str, middleware_source: &str, out_dir: &Path) -> Resu
     Ok(crate_dir.join("target/release").join(format!("lib{crate_name}.{ext}")))
 }
 
+/// 把**共享类型定义**注入插件源码（D6 工具链域，消除宿主/插件双写漂移）。
+///
+/// 宿主与运行期编译插件各自需要同一 `#[repr(C)]` 类型。若两边各写一遍，改类型时
+/// 极易漂移。此函数把类型定义作为**单一来源**注入插件 crate 顶部，插件源码只写
+/// 业务变换（`mw_enter`）。宿主侧可用 `include!(type_def)` 引入同一文件定义 struct。
+pub fn inject_shared_type(shared_type_def: &str, middleware_body: &str) -> String {
+    let mut source = String::new();
+    source.push_str("// 共享类型定义（编译管线注入；宿主经 include! 引入同一文件，同源）\n");
+    source.push_str(shared_type_def);
+    source.push('\n');
+    source.push_str("// 中间件本体（运行期编译的任意 Rust）\n");
+    source.push_str(middleware_body);
+    source.push('\n');
+    source
+}
+
 /// 单条编译诊断（错误域：错误代码/消息/源码行号）
 #[derive(Debug, Clone)]
 pub struct Diag {

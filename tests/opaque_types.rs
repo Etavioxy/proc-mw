@@ -179,12 +179,12 @@ unsafe extern "C" fn mpadded_enter(req: *mut std::ffi::c_void, _: *mut std::ffi:
 
 // ===== 堆类型：插件全链路（核心目的展示）=====
 
-/// String::push —— 运行期编译插件操作堆字符串字段
+/// String::push —— 运行期编译插件操作堆字符串字段（**类型注入** + 布局指纹校验）
 #[test]
 fn plugin_with_string_push() {
-    let src = r#"
-#[repr(C)]
-pub struct Msg { pub s: String }
+    // 共享类型定义单一来源：编译管线注入插件，宿主 include 同一文件（防双写漂移）
+    const TYPE_DEF: &str = r#"#[repr(C)] pub struct Msg { pub s: String }"#;
+    const BODY: &str = r#"
 #[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
 #[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
     let m = unsafe { &mut *(req as *mut Msg) };
@@ -192,9 +192,18 @@ pub struct Msg { pub s: String }
     m.s.push_str("HOOT");    // String::push_str
     0
 }
+#[no_mangle] pub extern "C" fn proc_mw_layout_fingerprint() -> u64 {
+    (std::mem::size_of::<Msg>() as u64) << 32 | (std::mem::align_of::<Msg>() as u64)
+}
 "#;
-    let so = proc_mw::compile::build_plugin_cached("types_string", src, &std::env::temp_dir()).unwrap();
-    let p = proc_mw::runtime::PluginOpaque::load(so.to_str().unwrap()).unwrap();
+    let source = proc_mw::compile::inject_shared_type(TYPE_DEF, BODY);
+    let so = proc_mw::compile::build_plugin_cached("types_string", &source, &std::env::temp_dir()).unwrap();
+    // 加载 + 布局指纹校验（D7）：插件指纹须与宿主一致
+    let p = proc_mw::runtime::PluginOpaque::load_with_layout(
+        so.to_str().unwrap(),
+        proc_mw::runtime::layout_fingerprint::<Msg>(),
+    )
+    .unwrap();
     #[repr(C)]
     struct Msg {
         s: String,
@@ -218,9 +227,16 @@ pub struct Msg { pub xs: Vec<u64> }
     m.xs.reverse();
     0
 }
+#[no_mangle] pub extern "C" fn proc_mw_layout_fingerprint() -> u64 {
+    (std::mem::size_of::<Msg>() as u64) << 32 | (std::mem::align_of::<Msg>() as u64)
+}
 "#;
     let so = proc_mw::compile::build_plugin_cached("types_vec", src, &std::env::temp_dir()).unwrap();
-    let p = proc_mw::runtime::PluginOpaque::load(so.to_str().unwrap()).unwrap();
+    let p = proc_mw::runtime::PluginOpaque::load_with_layout(
+        so.to_str().unwrap(),
+        proc_mw::runtime::layout_fingerprint::<Msg>(),
+    )
+    .unwrap();
     #[repr(C)]
     struct Msg {
         xs: Vec<u64>,
@@ -243,9 +259,16 @@ pub struct Msg { pub b: Box<i64> }
     *m.b += 5;               // Box deref_mut
     0
 }
+#[no_mangle] pub extern "C" fn proc_mw_layout_fingerprint() -> u64 {
+    (std::mem::size_of::<Msg>() as u64) << 32 | (std::mem::align_of::<Msg>() as u64)
+}
 "#;
     let so = proc_mw::compile::build_plugin_cached("types_box", src, &std::env::temp_dir()).unwrap();
-    let p = proc_mw::runtime::PluginOpaque::load(so.to_str().unwrap()).unwrap();
+    let p = proc_mw::runtime::PluginOpaque::load_with_layout(
+        so.to_str().unwrap(),
+        proc_mw::runtime::layout_fingerprint::<Msg>(),
+    )
+    .unwrap();
     #[repr(C)]
     struct Msg {
         b: Box<i64>,
@@ -268,9 +291,16 @@ pub struct Msg { pub n: Option<u32> }
     if let Some(n) = m.n.as_mut() { *n += 1; }  // Option 字段
     0
 }
+#[no_mangle] pub extern "C" fn proc_mw_layout_fingerprint() -> u64 {
+    (std::mem::size_of::<Msg>() as u64) << 32 | (std::mem::align_of::<Msg>() as u64)
+}
 "#;
     let so = proc_mw::compile::build_plugin_cached("types_option", src, &std::env::temp_dir()).unwrap();
-    let p = proc_mw::runtime::PluginOpaque::load(so.to_str().unwrap()).unwrap();
+    let p = proc_mw::runtime::PluginOpaque::load_with_layout(
+        so.to_str().unwrap(),
+        proc_mw::runtime::layout_fingerprint::<Msg>(),
+    )
+    .unwrap();
     #[repr(C)]
     struct Msg {
         n: Option<u32>,
@@ -362,6 +392,38 @@ fn struct_matrix() {
 ///
 /// 结论：通过 c_void 共享类型定义，**不能**承载 `dyn Trait`/闭包；`Box<dyn>` 同。可行域
 /// 是"布局稳定的具体类型"（本文件全矩阵）。这是 L7 极限的明确边界，不是缺陷。
+/// 布局漂移检测：插件声明的共享类型与宿主期望布局不一致 → **加载期硬失败**
+/// （D7：防共享类型漂移导致运行期 UB；指纹 = size<<32|align）。
+/// 局限：同 size/align 的字段重排无法被此指纹捕获（列 limits.md），是显式边界。
+#[test]
+fn plugin_layout_mismatch_detected_at_load() {
+    let src = r#"
+#[repr(C)]
+pub struct Msg { pub a: u8 }            // 插件布局：1 字节
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    let m = unsafe { &mut *(req as *mut Msg) };
+    m.a = m.a.wrapping_add(1);
+    0
+}
+#[no_mangle] pub extern "C" fn proc_mw_layout_fingerprint() -> u64 {
+    (std::mem::size_of::<Msg>() as u64) << 32 | (std::mem::align_of::<Msg>() as u64)
+}
+"#;
+    let so = proc_mw::compile::build_plugin_cached("types_mismatch", src, &std::env::temp_dir()).unwrap();
+    #[repr(C)]
+    struct Msg {
+        a: u64, // 宿主期望 8 字节 → 指纹不同
+    }
+    match proc_mw::runtime::PluginOpaque::load_with_layout(
+        so.to_str().unwrap(),
+        proc_mw::runtime::layout_fingerprint::<Msg>(),
+    ) {
+        Err(msg) => assert!(msg.contains("布局指纹不匹配"), "报错信息应指明指纹不匹配"),
+        Ok(_) => panic!("布局指纹不匹配必须在加载期报错，而非运行期 UB"),
+    }
+}
+
 #[test]
 fn dyn_trait_boundary_documented() {
     // 硬证据：`&dyn Trait` 是 16 字节胖指针（data + vtable），装不进 8 字节 c_void。
