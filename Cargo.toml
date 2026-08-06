@@ -87,5 +87,9 @@ required-features = ["runtime"]
 futures = "0.3"
 libloading = { version = "0.9", optional = true }
 
+[dev-dependencies]
+# 直接共享类型路径的测试依赖（usergoals：插件经 crate 依赖引用宿主类型）
+shared_types = { path = "labs/shared_types" }
+
 [features]
 runtime = ["dep:libloading"]

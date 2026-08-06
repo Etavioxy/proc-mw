@@ -1,0 +1,5 @@
+[package]
+name = "shared_types"
+version = "0.1.0"
+edition = "2021"
+description = "宿主与运行期编译中间件直接共享的类型（非双写声明，bevy 兼容路径）"
