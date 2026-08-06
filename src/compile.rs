@@ -183,9 +183,11 @@ pub fn build_plugin_cached(
 
     // 缓存未命中：编译并把产物复制到缓存位置
     let so = build_plugin(name, middleware_source, out_dir)?;
-    // 原子写缓存：先写临时名再 rename，避免并发读者看到半成品
-    let tmp = cache_path.with_extension("tmp");
+    // 原子写缓存：唯一 tmp（计数）→ rename，避免并发写同一 tmp 竞争（Bug 修复）
+    let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+    let tmp = cache_path.with_extension(format!("tmp.{n}"));
     fs::copy(&so, &tmp).map_err(|e| format!("写缓存: {e}"))?;
+    // 同名目标 rename 是原子的（Unix 覆盖），多线程同源码 → 内容一致，后写覆盖
     fs::rename(&tmp, &cache_path).map_err(|e| format!("缓存原子化: {e}"))?;
 
     // 资源管理：临时 crate 目录已冗余（产物已入缓存），清理防泄漏
