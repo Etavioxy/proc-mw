@@ -40,6 +40,14 @@ pub struct ChannelMsg {
     pub text: String, // 堆字段——直接共享类型定义保证布局一致
 }
 
+/// medium（tower）场景共享请求：非 repr(C)，直接共享
+#[derive(Debug, Clone)]
+pub struct ServiceReq {
+    pub id: u64,
+    pub path: String,
+    pub deadline_ms: u64, // 超时截止（毫秒时间戳；u64::MAX = 无限制）
+}
+
 /// 微服务场景（micro story）共享请求：非 repr(C)，直接共享
 #[derive(Debug, Clone)]
 pub struct MicroReq {
