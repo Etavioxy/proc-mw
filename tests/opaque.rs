@@ -171,6 +171,31 @@ fn send_sync_concurrent_chains() {
     }
 }
 
+// ===== D2 封闭内联槽位：OpaqueBuiltin（开关/位标记）=====
+
+#[test]
+fn opaque_builtin_closed_inline_slot() {
+    use proc_mw::opaque::OpaqueBuiltin;
+    // Continue：通过（no-op，开关打开），后续照跑
+    let c = OpaqueChain::new(vec![OpaqueBuiltin::Continue.to_node(), node(discount)]);
+    let mut o = order(1, 10);
+    assert_eq!(c.exec(|o| o.qty, &mut o).unwrap(), 9);
+    // Break：短路（返回码 1）
+    let c = OpaqueChain::new(vec![OpaqueBuiltin::Break.to_node(), node(discount)]);
+    let mut o = order(1, 10);
+    assert_eq!(c.exec(|o| o.qty, &mut o), Err(OPAQUE_BREAK));
+    // Reject：拒绝（返回码 2，开关关闭），后续不执行
+    let c = OpaqueChain::new(vec![OpaqueBuiltin::Reject.to_node(), node(discount)]);
+    let mut o = order(1, 10);
+    assert_eq!(c.exec(|o| o.qty, &mut o), Err(OPAQUE_REJECT));
+    assert_eq!(o.hops, 0, "拒绝后后续节点不执行");
+    // 热替换：Reject → Continue（配置热更开关）
+    let mut c = OpaqueChain::new(vec![OpaqueBuiltin::Reject.to_node(), node(discount)]);
+    assert!(c.set(0, OpaqueBuiltin::Continue.to_node()));
+    let mut o = order(1, 10);
+    assert_eq!(c.exec(|o| o.qty, &mut o).unwrap(), 9, "开关热更后放行");
+}
+
 // ===== 治理层迁移：类型无关治理在任意类型链上（不再 i32 Ctx 锚定）=====
 
 #[test]

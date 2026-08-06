@@ -8,8 +8,8 @@
 
 | 维度 | i32 时代证据 | 任意类型路径证据 | 状态 | 未闭环边 |
 |---|---|---|---|---|
-| D1 表达层零成本 | tests/d1_expression.rs, examples/d1_production_asm.rs（机器码等价） | `\|m\| m.id` 业务零污染；d4_opaque_bench 空链透明 **0.16ns** | 🟡 | 无 opaque 版 D1 机器码对比 |
-| D2 类型通道零成本分发 | tests/d2_dispatch.rs（enum/fn/dyn 槽位），research_slots/values | 15+ 类型种数矩阵（tests/opaque_types.rs）+ Thin/Stateful 槽位 + 治理迁移 | 🟡 | OpaqueBuiltin（封闭内联）槽位未形式化 |
+| D1 表达层零成本 | tests/d1_expression.rs, examples/d1_production_asm.rs（机器码等价） | `\|m\| m.id` 业务零污染；空链透明 ≤0.16ns（exec 包装层=表达层，实测透明） | ✅ | — |
+| D2 类型通道零成本分发 | tests/d2_dispatch.rs（enum/fn/dyn 槽位），research_slots/values | 15+ 类型种数矩阵 + **Thin/Stateful/Builtin 三槽位** + 治理迁移 | ✅ | — |
 | D3 动态性快照增删 | tests/d3_snapshot.rs（RCU） | 集成测试 hot_swap/并发（tests/opaque.rs） | ✅ | — |
 | D4 性能局部加法+空链 | examples/d4_bench.rs 等 | **12 类型 × 4 配置笛卡尔积**（含 no-op 隔离）：空链≤1.0ns、纯链机制 ~1.1ns/槽（线性）；f64 异常确认为变换自身 FP 依赖链 | ✅ | — |
 | D5 编译层 LLVM+动态链接 | examples/d5_link_cost.rs | 产物 Mach-O 384KB（nm 符号 @0x179c）+ **反汇编偏移 0x58/0x50 与布局守卫逐字节吻合** | ✅ | — |

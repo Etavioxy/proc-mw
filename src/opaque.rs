@@ -37,6 +37,35 @@ pub trait OpaqueMw: Send + Sync {
     fn exit(&self, _req: *mut std::ffi::c_void) {}
 }
 
+/// 封闭内联槽位（D2：位标记/开关——对齐 Ctx 链的 `Builtin` enum，但类型无关）。
+/// 类型无关操作只有：通过 / 短路 / 拒绝（无状态，实现为 Stateful 但零状态）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpaqueBuiltin {
+    /// 通过（no-op）：占位/开关打开
+    Continue,
+    /// 短路：终止链（返回码 1）
+    Break,
+    /// 拒绝：错误（返回码 2）——开关关闭/熔断注入
+    Reject,
+}
+
+impl OpaqueMw for OpaqueBuiltin {
+    fn enter(&self, _req: *mut std::ffi::c_void) -> i32 {
+        match self {
+            OpaqueBuiltin::Continue => OPAQUE_CONTINUE,
+            OpaqueBuiltin::Break => OPAQUE_BREAK,
+            OpaqueBuiltin::Reject => OPAQUE_REJECT,
+        }
+    }
+}
+
+impl OpaqueBuiltin {
+    /// 产出 Stateful 槽位节点（零状态，但走统一的 Stateful 分发）
+    pub fn to_node(self) -> OpaqueNode {
+        OpaqueNode::Stateful(Arc::new(self))
+    }
+}
+
 /// 类型无关中间件节点（D2 槽位：Thin fn-ptr 或 Stateful dyn）
 #[derive(Clone)]
 pub enum OpaqueNode {
