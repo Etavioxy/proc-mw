@@ -8,5 +8,5 @@ description = "三档体量测试·中型：生成 ~万 LOC 多模块服务用 p
 proc-mw = { path = "../../..", features = ["runtime"] }
 futures = "0.3"
 # medium（tower 语义）场景：真实 tower Service 集成 + 直接共享类型
-tower = "0.5"
+tower = { version = "0.5", features = ["util"] }
 shared_types = { path = "../../../labs/shared_types" }
