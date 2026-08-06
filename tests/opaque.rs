@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use proc_mw::async_opaque::{AsyncTimeoutError, OpaqueAsyncChain, OpaqueAsyncMw, OpaqueAsyncNode};
-use proc_mw::opaque::{HasDeadline, OpaqueChain, OpaqueMw, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
+use proc_mw::opaque::{HasDeadline, OpaqueBuiltin, OpaqueChain, OpaqueMw, OpaqueNode, OPAQUE_BREAK, OPAQUE_CONTINUE, OPAQUE_REJECT};
 use proc_mw::opaque_gov::{OpaqueMetrics, OpaqueRateLimiter};
 
 /// 共享类型（repr(C)：宿主与插件各自定义同一布局）
@@ -250,6 +250,35 @@ static COUNT: AtomicU64 = AtomicU64::new(0);
         Some(11),
         "状态跨热更迁移（v1 的 5 + v2 的 2×3 = 11），非归零"
     );
+}
+
+// ===== 链类型无关性：同一链实例处理多种请求类型（D2 类型无关）=====
+
+#[test]
+fn opaque_chain_serves_multiple_request_types() {
+    // 同一链实例：metrics + 开关——R 是 exec 的参数，中间件层类型无关
+    let chain = OpaqueChain::new(vec![
+        OpaqueNode::Stateful(Arc::new(OpaqueMetrics::new())),
+        OpaqueBuiltin::Continue.to_node(),
+    ]);
+    // 类型 A：Order
+    let mut o = order(1, 10);
+    assert_eq!(chain.exec(|o| o.qty, &mut o).unwrap(), 10, "Order 经链");
+    // 类型 B：另一个 repr(C) struct
+    #[repr(C)]
+    #[derive(Clone)]
+    struct Req {
+        v: i64,
+    }
+    let mut r = Req { v: 7 };
+    assert_eq!(chain.exec(|r| r.v, &mut r).unwrap(), 7, "Req 经同一链");
+    // 类型 C：含 String 的非 repr(C) 类型（heap）
+    #[derive(Clone)]
+    struct HeapReq {
+        s: String,
+    }
+    let mut h = HeapReq { s: "hi".into() };
+    assert_eq!(chain.exec(|h| h.s.len() as i64, &mut h).unwrap(), 2, "HeapReq 经同一链");
 }
 
 // ===== exec_catch（panic 兜底，对齐 Ctx 链的语义原语）=====
