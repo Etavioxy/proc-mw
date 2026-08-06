@@ -14,11 +14,15 @@ use std::sync::Arc;
 use crate::dispatch::{Ctx, Flow, MwError};
 
 /// async 中间件契约（dyn 兼容：boxed future）
+/// `exit` 是 post-core 钩子（洋葱退出）：默认空实现，子类可覆写观测/后处理
 pub trait AsyncMw: Send + Sync {
     fn call<'a>(
         &'a self,
         ctx: &'a mut Ctx,
     ) -> Pin<Box<dyn Future<Output = Result<Flow, MwError>> + Send + 'a>>;
+
+    /// 核心执行后调用（逆序）；默认空
+    fn exit(&self, _ctx: &mut Ctx) {}
 }
 
 /// 一次性挂起：poll 返回 Pending 一次再 Ready——模拟真实 IO 的暂停/恢复（零依赖）
@@ -90,8 +94,7 @@ impl AsyncChain {
         }
     }
 
-    /// async 执行：enter 正序（可 await/短路）→ 核心。
-    /// exit 钩子：AsyncMw 契约目前只定义 enter 方向（MVP；洋葱退出留待扩展）。
+    /// async 执行：enter 正序（可 await/短路）→ 核心 → exit 逆序（洋葱完整）
     pub async fn exec(
         &self,
         core: impl Fn(&mut Ctx) -> Result<i32, MwError>,
@@ -105,6 +108,10 @@ impl AsyncChain {
             }
         }
         ctx.output = core(&mut ctx)?;
+        // 洋葱退出：逆序执行 exit 钩子
+        for m in self.mws.iter().rev() {
+            m.exit(&mut ctx);
+        }
         Ok(ctx.output)
     }
 
@@ -148,6 +155,9 @@ impl AsyncChain {
         match r {
             Ok(r) => {
                 ctx.output = r?;
+                for m in self.mws.iter().rev() {
+                    m.exit(&mut ctx);
+                }
                 Ok(ctx.output)
             }
             Err(_) => Err(MwError::Rejected("core panicked")),

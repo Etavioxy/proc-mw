@@ -12,11 +12,15 @@ use crate::dispatch::{Flow, MwError};
 use crate::generic::Ctx;
 
 /// async 泛型中间件契约（boxed-future，dyn 兼容；L6：必然每次调用装箱）
+/// `exit` 是 post-core 钩子（洋葱退出）：默认空实现
 pub trait AsyncMw<R, O>: Send + Sync {
     fn call<'a>(
         &'a self,
         ctx: &'a mut Ctx<R, O>,
     ) -> Pin<Box<dyn Future<Output = Result<Flow, MwError>> + Send + 'a>>;
+
+    /// 核心执行后调用（逆序）；默认空
+    fn exit(&self, _ctx: &mut Ctx<R, O>) {}
 }
 
 /// async 泛型链
@@ -45,6 +49,10 @@ impl<R, O> AsyncChain<R, O> {
             }
         }
         ctx.output = Some(core(&mut ctx)?);
+        // 洋葱退出：逆序执行 exit 钩子
+        for m in self.mws.iter().rev() {
+            m.exit(&mut ctx);
+        }
         Ok(ctx.output.take().expect("核心必须产出输出"))
     }
 
@@ -90,6 +98,9 @@ impl<R, O> AsyncChain<R, O> {
         match r {
             Ok(r) => {
                 ctx.output = Some(r?);
+                for m in self.mws.iter().rev() {
+                    m.exit(&mut ctx);
+                }
                 Ok(ctx.output.take().expect("核心产出"))
             }
             Err(_) => Err(MwError::Rejected("core panicked")),

@@ -105,6 +105,32 @@ fn async_retry_succeeds_after_transient() {
     assert_eq!(r, 7, "5 → await +1=6 → core 7");
 }
 
+/// 有 exit 钩子的 async 中间件：exit 封顶输出（洋葱退出）
+struct AsyncCapExit {
+    max: i32,
+}
+impl AsyncMw for AsyncCapExit {
+    fn call<'a>(
+        &'a self,
+        _ctx: &'a mut Ctx,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Flow, MwError>> + Send + 'a>> {
+        Box::pin(async move { Ok(Flow::Continue) })
+    }
+    fn exit(&self, ctx: &mut Ctx) {
+        if ctx.output > self.max {
+            ctx.output = self.max;
+        }
+    }
+}
+
+#[test]
+fn async_exit_hook_runs_after_core() {
+    let chain = AsyncChain::new(vec![Arc::new(AsyncCapExit { max: 10 }) as Arc<dyn AsyncMw>]);
+    // 核心返回 100 → exit 钩子封顶 10（洋葱退出在核心后运行）
+    let r = futures::executor::block_on(chain.exec(|_| Ok(100), 5)).unwrap();
+    assert_eq!(r, 10, "exit 钩子在核心后运行并封顶输出");
+}
+
 #[test]
 fn async_retry_exhausts() {
     ACALLS.store(0, Ordering::SeqCst);
