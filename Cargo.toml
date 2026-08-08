@@ -89,6 +89,10 @@ path = "examples/d1_opaque_memory.rs"
 required-features = ["runtime"]
 
 [[example]]
+name = "d4_slot_bench"
+path = "examples/d4_slot_bench.rs"
+
+[[example]]
 name = "d7_plugin_memory"
 path = "examples/d7_plugin_memory.rs"
 required-features = ["runtime"]
