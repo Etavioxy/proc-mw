@@ -36,6 +36,16 @@
 3. ~~**OpaqueBuiltin 形式化（D2）**~~ ✅ 已闭环（510a9ee）。
 4. ~~**布局指纹增强（D7）**~~ ✅ 已闭环（(offset,size,align) 三元组，b19ee2d）。
 
+## 近期推边闭环（持续循环记录 · 续）
+- **治理管理操作双实现全对齐**：Metrics/CircuitBreaker/RateLimiter 的 reset/limit
+  在 Ctx 与 Opaque 双实现补齐（滚动窗口/手动恢复/访问器）。
+- **async 语义原语补全**：exec_or/parallel/failible/预检deadline/超时deadline/
+  retry×timeout —— async 链与 sync/opaque 全对齐。
+- **编译缓存补全**：build_plugin_with_deps_cached（deps 入键，direct 插件免重编）。
+- **D2 槽位成本实测**（d4_slot_bench）：Builtin +2.4/Stateful +2.6/Thin +3.1 ns。
+- **多配置门控修复**（4641a3f）：无 runtime 构建路径验证。
+- **沙箱全模式覆盖**：字节/文本/握手/重启（测试套件）。
+
 ## 近期推边闭环（持续循环记录）
 - **语义原语全对齐**：sync opaque（exec/retry/catch/or/parallel + exec_with_deadline/trace）
   + async（exec/retry/catch/timeout/or + exec_with_trace + exec_retry_timeout）——
