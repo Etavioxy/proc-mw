@@ -666,6 +666,21 @@ fn opaque_exec_fallible_distinguishes_error_domains() {
     assert_eq!(r3, Err(FallibleError::Chain(2)), "链拒绝域（≠核心失败）");
 }
 
+// ===== 限流手动 reset（管理操作）=====
+
+#[test]
+fn opaque_rate_limiter_manual_reset() {
+    let rl = Arc::new(OpaqueRateLimiter::new(1, Duration::from_secs(10)));
+    let chain = OpaqueChain::new(vec![OpaqueNode::Stateful(rl.clone())]);
+    let mut o1 = order(1, 10);
+    assert!(chain.exec(|o| o.qty, &mut o1).is_ok(), "第 1 次通过");
+    let mut o2 = order(2, 10);
+    assert_eq!(chain.exec(|o| o.qty, &mut o2), Err(OPAQUE_REJECT), "第 2 次被限流");
+    rl.reset(); // 手动清窗口 → 恢复
+    let mut o3 = order(3, 10);
+    assert!(chain.exec(|o| o.qty, &mut o3).is_ok(), "reset 后恢复放行");
+}
+
 // ===== metrics 滚动窗口（reset：长运行系统观测）=====
 
 #[test]
