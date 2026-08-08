@@ -12,6 +12,27 @@
 
 use crate::opaque::OpaqueChain;
 
+/// D8 候选识别（**真实 AST 解析**，syn 替代朴素文本启发式）：
+/// 解析源码，识别单参数 + 有返回类型的 `fn`（迁移候选）。
+pub fn find_handler_candidates_syn(source: &str) -> Vec<String> {
+    let Ok(file) = syn::parse_file(source) else { return Vec::new() };
+    file.items
+        .into_iter()
+        .filter_map(|item| match item {
+            syn::Item::Fn(f) => {
+                let single_param = f.sig.inputs.len() == 1;
+                let has_return = !matches!(f.sig.output, syn::ReturnType::Default);
+                if single_param && has_return {
+                    Some(f.sig.ident.to_string())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// 通用采纳点：输入经链变换后执行原 handler。
 /// `mk` 把业务输入构造成链的请求类型；`core` 从请求取出输入跑原 handler。
 pub fn adopt<V, R: Send + Clone, O>(
@@ -58,6 +79,25 @@ mod tests {
     #[derive(Clone)]
     struct Req {
         value: i64,
+    }
+
+    #[test]
+    fn find_handler_candidates_syn_detects_handlers() {
+        let src = r#"
+fn handle_login(v: i64) -> i64 { v + 1000 }
+fn handle_get_user(v: i64) -> i64 { v * 2 }
+fn helper(a: i64, b: i64) -> i64 { a + b }
+fn main() { }
+struct Foo { x: i32 }
+impl Foo { fn method(&self) -> i32 { 0 } }
+"#;
+        let candidates = find_handler_candidates_syn(src);
+        assert!(candidates.contains(&"handle_login".to_string()));
+        assert!(candidates.contains(&"handle_get_user".to_string()));
+        assert!(!candidates.contains(&"helper".to_string()), "双参数非候选");
+        assert!(!candidates.contains(&"main".to_string()), "main 无参数无返回");
+        assert!(!candidates.contains(&"method".to_string()), "方法 &self 非单值参数");
+        assert_eq!(candidates.len(), 2);
     }
 
     #[test]

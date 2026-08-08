@@ -100,6 +100,8 @@ required-features = ["runtime"]
 [dependencies]
 futures = "0.3"
 libloading = { version = "0.9", optional = true }
+# D8 真实 AST 解析（候选识别升级，替代朴素文本启发式）
+syn = { version = "2", features = ["full"] }
 
 [dev-dependencies]
 # 直接共享类型路径的测试依赖（usergoals：插件经 crate 依赖引用宿主类型）
