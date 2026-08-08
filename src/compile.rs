@@ -121,6 +121,41 @@ pub fn inject_shared_type(shared_type_def: &str, middleware_body: &str) -> Strin
     source
 }
 
+/// 带缓存的 direct-dependency 插件构建：键 = source ^ deps ^ 工具链指纹。
+/// 直接依赖插件（含宿主/生态依赖）重启/重复构建时免重编（共享 target 仍要 cargo 快照，
+/// 缓存则完全跳过编译）。
+pub fn build_plugin_with_deps_cached(
+    name: &str,
+    middleware_source: &str,
+    deps: &str,
+    out_dir: &Path,
+) -> Result<PathBuf, String> {
+    let cache_dir = out_dir.join("proc_mw_compile_cache");
+    fs::create_dir_all(&cache_dir).map_err(|e| format!("mkdir cache: {e}"))?;
+    let ext = if cfg!(target_os = "macos") {
+        "dylib"
+    } else if cfg!(target_os = "windows") {
+        "dll"
+    } else {
+        "so"
+    };
+    let key = format!("{middleware_source}\n---DEPS---\n{deps}");
+    let hash = fnv1a64(key.as_bytes()) ^ toolchain_fingerprint().rotate_left(32);
+    let cache_path = cache_dir.join(format!("{name}_{hash:016x}.{ext}"));
+    if cache_path.exists() {
+        CACHE_HITS.fetch_add(1, Ordering::SeqCst);
+        TOTAL_BUILDS.fetch_add(1, Ordering::SeqCst);
+        return Ok(cache_path);
+    }
+    TOTAL_BUILDS.fetch_add(1, Ordering::SeqCst);
+    let so = build_plugin_with_deps(name, middleware_source, deps, out_dir)?;
+    let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+    let tmp = cache_path.with_extension(format!("tmp.{n}"));
+    fs::copy(&so, &tmp).map_err(|e| format!("写缓存: {e}"))?;
+    fs::rename(&tmp, &cache_path).map_err(|e| format!("缓存原子化: {e}"))?;
+    Ok(cache_path)
+}
+
 /// 单条编译诊断（错误域：错误代码/消息/源码行号）
 #[derive(Debug, Clone)]
 pub struct Diag {

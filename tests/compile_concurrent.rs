@@ -38,6 +38,20 @@ fn concurrent_compilation_safe() {
 }
 
 #[test]
+fn build_plugin_with_deps_cached_works() {
+    use proc_mw::compile::build_plugin_with_deps_cached;
+    let out_dir = std::env::temp_dir().join(format!("proc_mw_wdc_{}", std::process::id()));
+    let so1 = build_plugin_with_deps_cached("wdc_probe", &mw_src(1), "", &out_dir).unwrap();
+    let so2 = build_plugin_with_deps_cached("wdc_probe", &mw_src(1), "", &out_dir).unwrap();
+    assert_eq!(so1, so2, "同源码+deps → 缓存命中同产物");
+    let so3 = build_plugin_with_deps_cached("wdc_probe", &mw_src(2), "", &out_dir).unwrap();
+    assert_ne!(so1, so3, "不同源码 → 不同产物");
+    // 产物可加载（直接依赖路径的缓存化）
+    let p = proc_mw::runtime::PluginOpaque::load(so1.to_str().unwrap()).unwrap();
+    assert_eq!(p.abi_version(), 1);
+}
+
+#[test]
 fn plugin_target_cleanup_caps_shared_target() {
     use proc_mw::compile::plugin_target_cleanup;
     let out_dir = std::env::temp_dir().join(format!("proc_mw_ptc_{}", std::process::id()));
