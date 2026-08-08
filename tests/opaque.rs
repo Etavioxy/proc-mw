@@ -520,6 +520,21 @@ fn async_opaque_exec_retry_timeout() {
     assert_eq!(o.hops, 1, "只有成功尝试变换（克隆重放）");
 }
 
+// ===== async 预检 deadline（对齐 sync exec_with_deadline）=====
+
+#[test]
+fn async_opaque_exec_with_deadline_precheck() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+    let chain = OpaqueAsyncChain::empty();
+    let mut expired = DeadlineReq2 { deadline: now - 1000 };
+    let r = futures::executor::block_on(chain.exec_with_deadline(|r| r.deadline, &mut expired));
+    assert_eq!(r, Err(OPAQUE_REJECT), "过期预检拒绝");
+    let mut ok = DeadlineReq2 { deadline: u64::MAX };
+    let r2 = futures::executor::block_on(chain.exec_with_deadline(|r| r.deadline, &mut ok));
+    assert_eq!(r2, Ok(u64::MAX), "无限制通过");
+}
+
 // ===== async 可失败核心（对齐 sync exec_fallible）=====
 
 #[test]

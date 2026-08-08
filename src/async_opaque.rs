@@ -147,6 +147,23 @@ impl OpaqueAsyncChain {
         Ok(out)
     }
 
+    /// 异步预检 deadline（对齐 sync `exec_with_deadline`）：过期即拒（返回码 2），
+    /// 非超时竞速（预检版；`exec_timeout_with_deadline` 是超时版）。
+    pub async fn exec_with_deadline<R: Send + HasDeadline, O>(
+        &self,
+        core: impl Fn(&mut R) -> O + Send + Sync,
+        req: &mut R,
+    ) -> Result<O, i32> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        if req.deadline_ms() != u64::MAX {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+            if now > req.deadline_ms() {
+                return Err(OPAQUE_REJECT);
+            }
+        }
+        self.exec(core, req).await
+    }
+
     /// 异步可失败核心（对齐 sync `exec_fallible`）：核心 Result 与链返回码分域。
     pub async fn exec_fallible<R: Send, O, E>(
         &self,
