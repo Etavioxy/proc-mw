@@ -123,6 +123,13 @@ pub struct AsyncChain {
     mws: Arc<Vec<Arc<dyn AsyncMw>>>,
 }
 
+/// async 超时错误（i32 async 通道）：链失败（MwError）或超时
+#[derive(Debug, PartialEq)]
+pub enum AsyncMwTimeoutError {
+    Chain(MwError),
+    Timeout,
+}
+
 impl AsyncChain {
     pub fn new(mws: Vec<Arc<dyn AsyncMw>>) -> Self {
         AsyncChain {
@@ -149,6 +156,23 @@ impl AsyncChain {
             m.exit(&mut ctx);
         }
         Ok(ctx.output)
+    }
+
+    /// async 超时（对齐 async_opaque::exec_timeout）：select 竞速 exec 与计时器，
+    /// 超时终止挂起的执行。i32 async 通道此前缺 timeout 原语。
+    pub async fn exec_timeout(
+        &self,
+        core: impl Fn(&mut Ctx) -> Result<i32, MwError> + Send,
+        input: i32,
+        dur: std::time::Duration,
+    ) -> Result<i32, AsyncMwTimeoutError> {
+        use futures::FutureExt;
+        let exec_fut = self.exec(core, input).boxed();
+        let timer = crate::async_opaque::Timer::new(dur).boxed();
+        match futures::future::select(exec_fut, timer).await {
+            futures::future::Either::Left((r, _)) => r.map_err(AsyncMwTimeoutError::Chain),
+            futures::future::Either::Right((_, _)) => Err(AsyncMwTimeoutError::Timeout),
+        }
     }
 
     /// async 重试：失败重跑整条链最多 attempts 次（核心须 Copy 可重入）

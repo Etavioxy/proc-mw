@@ -1,7 +1,9 @@
 //! D2 极致 · async 通道测试场景
 //! 验证：async 中间件可真实 await（挂起/恢复）、短路、Send+Sync、开销量化。
 
+use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use proc_mw::async_mw::{AsyncAdd, AsyncChain, AsyncRejectNegative, AsyncMw};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -184,4 +186,30 @@ fn async_overhead_quantified() {
     let async_ns = t1.elapsed().as_nanos() as f64 / iters as f64;
     println!("同步链 {:.2} ns/调用 vs async 链 {:.2} ns/调用（装箱 Future + poll 开销）", sync_ns, async_ns);
     assert!(async_ns > sync_ns, "async 必须有装箱开销");
+}
+
+// ===== async_mw exec_timeout（i32 async 通道 timeout 原语，对齐 async_opaque）=====
+
+/// 挂死 async 中间件（i32）：永不 resolve
+struct HungAsync;
+impl proc_mw::async_mw::AsyncMw for HungAsync {
+    fn call<'a>(&'a self, _ctx: &'a mut Ctx) -> std::pin::Pin<Box<dyn Future<Output = Result<Flow, MwError>> + Send + 'a>> {
+        Box::pin(async move {
+            futures::future::pending::<()>().await;
+            Ok(Flow::Continue)
+        })
+    }
+    fn exit(&self, _ctx: &mut Ctx) {}
+}
+
+#[test]
+fn async_mw_exec_timeout() {
+    use proc_mw::async_mw::{AsyncChain, AsyncMwTimeoutError};
+    let chain = AsyncChain::new(vec![Arc::new(HungAsync)]);
+    let r = futures::executor::block_on(chain.exec_timeout(core, 5, Duration::from_millis(50)));
+    assert_eq!(r, Err(AsyncMwTimeoutError::Timeout), "挂死中间件被超时终止");
+    // 正常中间件 → 成功（不经超时）
+    let chain2 = AsyncChain::new(vec![Arc::new(AsyncAdd { n: 1 }) as Arc<dyn proc_mw::async_mw::AsyncMw>]);
+    let r2 = futures::executor::block_on(chain2.exec_timeout(core, 5, Duration::from_millis(50)));
+    assert_eq!(r2, Ok(7), "正常 async 执行");
 }
