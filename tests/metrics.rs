@@ -47,3 +47,16 @@ fn metrics_shared_across_chains() {
     chain2.exec(ok_core, 2).unwrap();
     assert_eq!(metrics.calls(), 2, "跨链共享观测");
 }
+
+#[test]
+fn metrics_rolling_window_reset() {
+    use proc_mw::dispatch::Mw;
+    let m = proc_mw::metrics::Metrics::new();
+    let mut ctx = proc_mw::dispatch::Ctx::new(1);
+    Mw::enter(&m, &mut ctx).unwrap();
+    Mw::exit(&m, &mut ctx);
+    assert_eq!(m.calls(), 1);
+    m.reset();
+    assert_eq!(m.calls(), 0, "窗口清零");
+    assert_eq!(m.successes(), 0);
+}

@@ -30,6 +30,11 @@ impl Metrics {
     pub fn errors(&self) -> usize {
         self.calls.load(Ordering::Relaxed) - self.successes.load(Ordering::Relaxed)
     }
+    /// 重置计数（滚动观测窗口：每窗口清零，与 OpaqueMetrics::reset 对齐）
+    pub fn reset(&self) {
+        self.calls.store(0, Ordering::Relaxed);
+        self.successes.store(0, Ordering::Relaxed);
+    }
 }
 
 impl Mw for Metrics {
