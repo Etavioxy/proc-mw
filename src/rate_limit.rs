@@ -30,6 +30,17 @@ impl RateLimiter {
             })),
         }
     }
+
+    pub fn limit(&self) -> u32 {
+        self.limit
+    }
+
+    /// 手动重置（管理操作）：清当前窗口计数（立即恢复放行，与 OpaqueRateLimiter 对齐）
+    pub fn reset(&self) {
+        let mut st = self.state.lock().unwrap();
+        st.window_start = Instant::now();
+        st.count = 0;
+    }
 }
 
 impl Mw for RateLimiter {

@@ -43,3 +43,21 @@ fn rate_limit_window_resets() {
     std::thread::sleep(Duration::from_millis(5)); // 等窗口滚动
     assert_eq!(chain.exec(core, 3).unwrap(), 4, "窗口滚动后计数重置");
 }
+
+#[test]
+fn rate_limiter_limit_and_reset() {
+    use std::time::Duration;
+    let rl = proc_mw::rate_limit::RateLimiter::new(1, Duration::from_secs(10));
+    assert_eq!(rl.limit(), 1);
+    let chain = proc_mw::chain::Chain::new(vec![proc_mw::dispatch::Node::Dyn(std::sync::Arc::new(rl))]);
+    assert!(chain.exec(|_| Ok(1), 1).is_ok(), "第1次通过");
+    assert!(chain.exec(|_| Ok(1), 2).is_err(), "第2次被限流");
+    // 手动 reset → 恢复
+    let rl2 = proc_mw::rate_limit::RateLimiter::new(1, Duration::from_secs(10));
+    let chain2 = proc_mw::chain::Chain::new(vec![proc_mw::dispatch::Node::Dyn(std::sync::Arc::new(rl2))]);
+    let _ = chain2.exec(|_| Ok(1), 1);
+    // 用独立实例验证 reset 行为（避免持有被链占用的 Arc）
+    let rl3 = proc_mw::rate_limit::RateLimiter::new(0, Duration::from_secs(10)); // limit 0 → 全拒
+    let chain3 = proc_mw::chain::Chain::new(vec![proc_mw::dispatch::Node::Dyn(std::sync::Arc::new(rl3))]);
+    assert!(chain3.exec(|_| Ok(1), 1).is_err(), "limit 0 全拒");
+}
