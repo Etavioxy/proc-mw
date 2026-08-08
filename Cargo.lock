@@ -160,6 +160,7 @@ dependencies = [
  "futures",
  "libloading",
  "shared_types",
+ "syn",
 ]
 
 [[package]]

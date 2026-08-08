@@ -1298,3 +1298,32 @@ pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::f
     let r = chain.exec(|m| m.val, &mut m).unwrap();
     assert_eq!(r, 42, "运行期编译的任意类型中间件在链上生效");
 }
+
+// ===== 沙箱拒绝路径（插件返回码 2 → 子进程 status 1 → Err）=====
+
+#[test]
+fn sandbox_rejecting_plugin_path() {
+    let src = r#"
+#[repr(C)]
+pub struct Order { pub id: u64, pub qty: i64, pub hops: u32 }
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(req: *mut std::ffi::c_void, _resp: *mut std::ffi::c_void) -> i32 {
+    let o = unsafe { &mut *(req as *mut Order) };
+    if o.qty > 50 { return 2; }  // 拒绝
+    o.qty += 1;
+    0
+}
+"#;
+    let so = proc_mw::compile::build_plugin_cached("sandbox_reject", src, &std::env::temp_dir()).unwrap();
+    let exec = std::path::Path::new(env!("CARGO_BIN_EXE_mw_exec"));
+    let sb = proc_mw::sandbox::Sandbox::spawn_bytes(exec, &so).unwrap();
+    let m = |o: &Order| unsafe {
+        std::slice::from_raw_parts((o as *const Order) as *const u8, std::mem::size_of::<Order>()).to_vec()
+    };
+    // 大单 → 拒绝 → Err
+    let big = order(1, 100);
+    assert!(sb.run_bytes(&m(&big)).is_err(), "沙箱拒绝路径（插件返回码 2 → status 1 → Err）");
+    // 小单 → 放行
+    let small = order(2, 10);
+    assert!(sb.run_bytes(&m(&small)).is_ok(), "沙箱放行路径");
+}
