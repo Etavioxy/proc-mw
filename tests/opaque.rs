@@ -666,6 +666,23 @@ fn opaque_exec_fallible_distinguishes_error_domains() {
     assert_eq!(r3, Err(FallibleError::Chain(2)), "链拒绝域（≠核心失败）");
 }
 
+// ===== metrics 滚动窗口（reset：长运行系统观测）=====
+
+#[test]
+fn opaque_metrics_rolling_window_reset() {
+    let m = Arc::new(OpaqueMetrics::new());
+    let chain = OpaqueChain::new(vec![OpaqueNode::Stateful(m.clone()), node(discount)]);
+    let mut o = order(1, 10);
+    chain.exec(|o| o.qty, &mut o).unwrap();
+    assert_eq!(m.calls(), 1);
+    m.reset(); // 窗口滚动：清零
+    assert_eq!(m.calls(), 0, "窗口清零");
+    let mut o2 = order(2, 10);
+    chain.exec(|o| o.qty, &mut o2).unwrap();
+    assert_eq!(m.calls(), 1, "新窗口计数");
+    assert_eq!(m.successes(), 1);
+}
+
 // ===== opaque exec_parallel（对齐 Ctx 链：多请求并行经链）=====
 
 #[test]
