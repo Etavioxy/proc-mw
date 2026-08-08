@@ -20,6 +20,13 @@ struct CircuitState {
 }
 
 impl CircuitBreaker {
+    /// 手动重置（管理/测试）：强制关闭熔断（清失败计数 + 取消 open_until）
+    pub fn reset(&self) {
+        let mut st = self.state.lock().unwrap();
+        st.failures = 0;
+        st.open_until = None;
+    }
+
     pub fn new(threshold: u32, cooldown: Duration) -> Self {
         Self {
             threshold,

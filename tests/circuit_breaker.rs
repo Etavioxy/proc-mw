@@ -54,3 +54,16 @@ fn recovers_after_cooldown_half_open() {
     // 半开：放行试探，成功 → 重置关闭
     assert_eq!(cb.call(&chain, ok_core, 5).unwrap(), 6);
 }
+
+#[test]
+fn circuit_breaker_manual_reset() {
+    use std::time::Duration;
+    let cb = proc_mw::circuit_breaker::CircuitBreaker::new(2, Duration::from_millis(1000));
+    let chain = proc_mw::chain::Chain::new(vec![]);
+    // 两次失败 → 打开
+    assert!(cb.call(&chain, |_| Err(proc_mw::dispatch::MwError::Rejected("x")), 1).is_err());
+    assert!(cb.call(&chain, |_| Err(proc_mw::dispatch::MwError::Rejected("x")), 2).is_err());
+    // 打开后手动 reset → 恢复
+    cb.reset();
+    assert!(cb.call(&chain, |_| Ok(5), 3).is_ok(), "reset 后恢复");
+}
