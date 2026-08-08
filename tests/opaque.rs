@@ -1327,3 +1327,22 @@ pub struct Order { pub id: u64, pub qty: i64, pub hops: u32 }
     let small = order(2, 10);
     assert!(sb.run_bytes(&m(&small)).is_ok(), "沙箱放行路径");
 }
+
+// ===== 文本模式沙箱拒绝路径（-999 哨兵 → Err）=====
+
+#[test]
+fn sandbox_text_mode_rejection() {
+    let src = r#"
+#[no_mangle] pub extern "C" fn proc_mw_abi_version() -> i32 { 1 }
+#[no_mangle] pub unsafe extern "C" fn mw_enter(input: *mut i32, _output: *mut i32) -> i32 {
+    if unsafe { *input } < 0 { return 2; }  // 拒绝
+    unsafe { *input += 5; }
+    0
+}
+"#;
+    let so = proc_mw::compile::build_plugin_cached("txt_reject", src, &std::env::temp_dir()).unwrap();
+    let exec = std::path::Path::new(env!("CARGO_BIN_EXE_mw_exec"));
+    let sb = proc_mw::sandbox::Sandbox::spawn(exec, &so).unwrap(); // 文本模式
+    assert!(sb.run(-5).is_err(), "文本模式拒绝路径（-999 哨兵 → Err）");
+    assert_eq!(sb.run(5).unwrap(), 10, "文本模式放行");
+}
