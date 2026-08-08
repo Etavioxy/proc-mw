@@ -537,6 +537,16 @@ impl OpaqueAsyncMw for PartialThenHang {
 }
 
 #[test]
+fn async_timeout_rollback_restores_request() {
+    // PartialThenHang 先变换再挂起；exec_timeout_rollback 超时后请求恢复原状
+    let chain = OpaqueAsyncChain::new(vec![OpaqueAsyncNode::Async(Arc::new(PartialThenHang))]);
+    let mut o = order(1, 10);
+    let r = futures::executor::block_on(chain.exec_timeout_rollback(|o| o.qty, &mut o, Duration::from_millis(50)));
+    assert_eq!(r, Err(AsyncTimeoutError::Timeout), "超时终止");
+    assert_eq!(o.qty, 10, "回滚：部分变换被恢复（qty 仍是 10）");
+}
+
+#[test]
 fn async_timeout_leaves_request_partial() {
     let chain = OpaqueAsyncChain::new(vec![OpaqueAsyncNode::Async(Arc::new(PartialThenHang))]);
     let mut o = order(1, 10);

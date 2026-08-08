@@ -284,6 +284,25 @@ impl OpaqueAsyncChain {
             .unwrap_or(Err(OPAQUE_REJECT))
     }
 
+    /// 异步超时执行 + **回滚**（解决部分变换边界）：超时取消时请求恢复原状
+    /// （克隆快照，超时写回）。`exec_timeout` 取消不滚回（61db56f 记录的边界），
+    /// 本变体用 R:Clone 提供一致性。
+    pub async fn exec_timeout_rollback<R: Send + Clone, O>(
+        &self,
+        core: impl Fn(&mut R) -> O + Send + Sync,
+        req: &mut R,
+        dur: Duration,
+    ) -> Result<O, AsyncTimeoutError> {
+        let snapshot = req.clone();
+        match self.exec_timeout(core, req, dur).await {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                *req = snapshot; // 超时回滚：请求恢复原状
+                Err(e)
+            }
+        }
+    }
+
     /// 异步超时执行（**请求自带 deadline**）：读 `HasDeadline` 的 deadline_ms，
     /// 剩余时间作为超时——统一 deadline 字段机制与 async 超时（此前各自独立）。
     pub async fn exec_timeout_with_deadline<R: Send + HasDeadline + Clone, O>(
