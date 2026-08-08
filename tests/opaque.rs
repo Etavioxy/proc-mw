@@ -1346,3 +1346,28 @@ fn sandbox_text_mode_rejection() {
     assert!(sb.run(-5).is_err(), "文本模式拒绝路径（-999 哨兵 → Err）");
     assert_eq!(sb.run(5).unwrap(), 10, "文本模式放行");
 }
+
+// ===== config 全 spec 类型矩阵（metrics/rate-limit/reject/pass/break）=====
+
+#[test]
+fn opaque_config_all_spec_types() {
+    use proc_mw::config::build_opaque_chain;
+    // metrics + rate-limit:1 → 第 1 通过、第 2 拒
+    let c = build_opaque_chain(&["metrics", "rate-limit:1"]).unwrap();
+    let mut o1 = order(1, 10);
+    assert!(c.exec(|o| o.qty, &mut o1).is_ok());
+    let mut o2 = order(2, 10);
+    assert_eq!(c.exec(|o| o.qty, &mut o2), Err(OPAQUE_REJECT), "rate-limit:1 第 2 次拒");
+    // reject 开关 → 全拒
+    let c2 = build_opaque_chain(&["reject"]).unwrap();
+    let mut o3 = order(3, 10);
+    assert_eq!(c2.exec(|o| o.qty, &mut o3), Err(OPAQUE_REJECT));
+    // pass → 全放
+    let c3 = build_opaque_chain(&["pass"]).unwrap();
+    let mut o4 = order(4, 10);
+    assert_eq!(c3.exec(|o| o.qty, &mut o4).unwrap(), 10);
+    // break → 短路 Err(1)
+    let c4 = build_opaque_chain(&["break"]).unwrap();
+    let mut o5 = order(5, 10);
+    assert_eq!(c4.exec(|o| o.qty, &mut o5), Err(OPAQUE_BREAK));
+}
