@@ -41,7 +41,14 @@
 - ✅ 配置驱动（sync/async/opaque）+ 泛型通道统一
 - ⚠️ 边界：无 syn 的 AST codemod（朴素文本启发式）；evcxr 依赖 dylib 化=差异非缺口
 
+## 自列边推进记录（2026-08-09）
+- ✅ **async 部分变换回滚**（be94a15）：exec_timeout_rollback（R:Clone 快照写回）。
+- ✅ **syn codemod**（413ed5c）：find_handler_candidates_syn（真实 AST 解析替代文本启发式）。
+- ✅ **堆类型沙箱编组**（89bf5ca）：marshalling 契约（String→固定内联缓冲跨子进程）。
+- ⚠️ 仅剩 **open-world const-fold**（D1 弱形式，open 分派无法 const-fold）——为设计固有的
+  限制（运行时节点），以诚实边界记录。
+
 ## 总判定
-八维均达到"实现闭环 + 测量证据 + 诚实边界记录"。每个维度仍有可推之边
-（open-world const-fold、堆类型沙箱编组、syn codemod、async 部分变换回滚），
-但均以边界或差异显式记录，不宣称无剩余。持续循环继续。
+八维均达到"实现闭环 + 测量证据 + 诚实边界记录"。自列可推之边已推进三条
+（async 回滚 / syn AST / 堆类型编组），仅剩 open-world const-fold 为设计固有限制
+（运行时开放分派无法 const-fold，与 Ctx 链 closed enum 不同）。持续循环继续。
