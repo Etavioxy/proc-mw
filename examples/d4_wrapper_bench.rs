@@ -64,5 +64,34 @@ fn main() {
     }
     let ec_ns = t.elapsed().as_nanos() as f64 / iters as f64;
     println!("exec_catch（panic 兜底）      {ec_ns:>8.2} ns/请求（+{:.2}）", ec_ns - exec_ns);
-    let _ = (acc, acc2, acc3);
+
+    // exec_or（fallback 闭包）
+    let mut m3 = Msg { v: 0 };
+    let t = Instant::now();
+    let mut acc4 = 0i64;
+    for i in 0..iters {
+        m3.v = i as i64;
+        std::hint::black_box(&mut m3);
+        acc4 += chain.exec_or(|m| m.v, std::hint::black_box(&mut m3), |m| m.v);
+    }
+    let eo_ns = t.elapsed().as_nanos() as f64 / iters as f64;
+    println!("exec_or（降级 fallback）       {eo_ns:>8.2} ns/请求（+{:.2}）", eo_ns - exec_ns);
+
+    // exec_retry（克隆重放，1 次成功）
+    #[derive(Clone)]
+    struct ReqC {
+        v: i64,
+    }
+    let chain2 = OpaqueChain::empty();
+    let mut r2 = ReqC { v: 0 };
+    let t = Instant::now();
+    let mut acc5 = 0i64;
+    for i in 0..iters {
+        r2.v = i as i64;
+        std::hint::black_box(&mut r2);
+        acc5 += chain2.exec_retry(|r| r.v, std::hint::black_box(&mut r2), 1).unwrap();
+    }
+    let er_ns = t.elapsed().as_nanos() as f64 / iters as f64;
+    println!("exec_retry（克隆重放）          {er_ns:>8.2} ns/请求（+{:.2}）", er_ns - exec_ns);
+    let _ = (acc, acc2, acc3, acc4, acc5);
 }
