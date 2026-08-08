@@ -520,6 +520,31 @@ fn async_opaque_exec_retry_timeout() {
     assert_eq!(o.hops, 1, "只有成功尝试变换（克隆重放）");
 }
 
+// ===== async 超时取消边界：部分变换不滚回（显式记录）=====
+
+/// 先变换再挂起的中间件：超时取消后请求被部分变换
+struct PartialThenHang;
+impl OpaqueAsyncMw for PartialThenHang {
+    fn call<'a>(&'a self, req: *mut std::ffi::c_void) -> Pin<Box<dyn Future<Output = i32> + Send + 'a>> {
+        let addr = req as usize;
+        Box::pin(async move {
+            let o = unsafe { &mut *(addr as *mut Order) };
+            o.qty += 1; // 先变换
+            futures::future::pending::<()>().await; // 然后挂起
+            OPAQUE_CONTINUE
+        })
+    }
+}
+
+#[test]
+fn async_timeout_leaves_request_partial() {
+    let chain = OpaqueAsyncChain::new(vec![OpaqueAsyncNode::Async(Arc::new(PartialThenHang))]);
+    let mut o = order(1, 10);
+    let r = futures::executor::block_on(chain.exec_timeout(|o| o.qty, &mut o, Duration::from_millis(50)));
+    assert_eq!(r, Err(AsyncTimeoutError::Timeout), "超时终止");
+    assert_eq!(o.qty, 11, "取消不滚回已部分变换（显式边界：调用方应视为无效/重新克隆）");
+}
+
 // ===== async 预检 deadline（对齐 sync exec_with_deadline）=====
 
 #[test]
