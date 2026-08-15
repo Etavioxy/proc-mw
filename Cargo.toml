@@ -3,6 +3,9 @@ name = "proc-mw"
 version = "0.1.0"
 edition = "2021"
 description = "生产 Service 语义 × 运行期热重载的中间件层 — 八维约束在同一项目中持续验证"
+license = "MIT"
+repository = "https://github.com/Etavioxy/proc-mw"
+authors = ["Etavioxy <etavioxy@foxmail.com>"]
 
 # proc-mw 同时是工作区根；labs/ 是测量台（非系统碎片），
 # 用于 D5 编译/动态链接的隔离实验（合成代码生成、独立 dylib 编译单元）。
