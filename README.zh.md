@@ -8,6 +8,8 @@
 
 `proc-mw` 是一个 Rust 中间件系统：业务核心（纯函数）与横切逻辑（中间件）解耦，中间件在核心进入/退出时插入逻辑，支持运行时动态增删，并追求 **Release 零成本**——Debug 下全功能动态，Release 下剥离中间层、退化为裸函数调用。
 
+**为什么做**：补齐生态缺口——[tower](https://crates.io/crates/tower) 有生产 Service 语义（短路、上下文、错误、async）但没有运行期热重载；[evcxr](https://github.com/evcxr/evcxr) 有运行期编译→dlopen→重载但没有生产中间件语义。proc-mw 是两者的交集而非照搬：保留 evcxr 的管线（syn→crate→.so→dlopen→符号→缓存→永不卸载），丢掉 REPL 壳。对 AI agent 尤其重要：agent 的迭代循环就是热重载场景（改→跑→看），而中间件观测介于 debugger（重、暂停执行）与直接 log（糙、要改代码）之间——不改业务代码、运行期可开关可移除。
+
 设计以「最终植入大型 Rust 系统」为判据，八维约束在同一项目中持续验证：
 
 | 维度 | 内容 | 落点 |

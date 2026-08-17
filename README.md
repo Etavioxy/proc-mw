@@ -8,6 +8,8 @@ Production Service semantics × runtime hot-reload Rust middleware layer — eig
 
 `proc-mw` is a Rust middleware system: the business core (pure functions) is decoupled from cross-cutting logic (middleware), which hooks in at core entry/exit, supports dynamic add/remove at runtime, and pursues **zero cost in Release** — full dynamics in Debug, and in Release the middleware layer is stripped away, degrading to bare function calls.
 
+**Why**: this fills an ecosystem gap — [tower](https://crates.io/crates/tower) has production Service semantics (short-circuit, context, errors, async) but no runtime hot reload; [evcxr](https://github.com/evcxr/evcxr) has runtime compile→dlopen→reload but no production middleware semantics. proc-mw is the intersection, not a copy: it keeps evcxr's pipeline (syn → crate → .so → dlopen → symbol → cache → never unload) and drops the REPL shell. For AI agents it matters the most: agent iteration is a hot-reload loop (edit → run → observe), and middleware observation sits between a debugger (heavy, stops execution) and direct logging (coarse, needs code changes) — injectable, switchable, and removable at runtime without touching business code.
+
 The design is judged by "eventually embedding in large Rust systems", with eight constraints continuously validated in one project:
 
 | Dimension | Content | Landing point |
